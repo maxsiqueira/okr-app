@@ -6,7 +6,8 @@ import { JiraIssue } from "@/types/jira"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Search, Clock } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 
 export function EpicAnalysis() {
     const [searchParams, setSearchParams] = useSearchParams()
@@ -134,6 +135,28 @@ export function EpicAnalysis() {
     const total = filteredChildren.length
     const percentComplete = total > 0 ? Math.round((doneCount / total) * 100) : 0
 
+    // Time Tracking Calculations (Aggregated)
+    let totalSpentSeconds = 0
+    let totalEstimateSeconds = 0
+
+    filteredChildren.forEach(child => {
+        // Parent
+        totalSpentSeconds += child.fields.timespent || 0
+        totalEstimateSeconds += child.fields.timeoriginalestimate || 0
+
+        // Subtasks
+        if (child.subtasks) {
+            child.subtasks.forEach(sub => {
+                totalSpentSeconds += sub.fields.timespent || 0
+                totalEstimateSeconds += sub.fields.timeoriginalestimate || 0
+            })
+        }
+    })
+
+    const totalSpentHours = Math.round(totalSpentSeconds / 3600)
+    const totalEstimateHours = Math.round(totalEstimateSeconds / 3600)
+    const timeProgress = totalEstimateHours > 0 ? Math.min(100, Math.round((totalSpentHours / totalEstimateHours) * 100)) : 0
+
     // Workload from Filtered Data (Time Spent / Waste)
     const workloadMap = new Map<string, number>()
     filteredChildren.forEach(child => {
@@ -170,6 +193,45 @@ export function EpicAnalysis() {
     // Fallback if no time tracking data found
     const workloadData = realWorkloadData.length > 0 ? realWorkloadData : [
         { name: 'Sem registros', hours: 0 }
+    ]
+
+    // Quarterly Completion Breakdown (Tasks Finished by Quarter)
+    const currentYear = new Date().getFullYear()
+    const quarterlyCompletion = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
+
+    filteredChildren.forEach(child => {
+        if (child.fields.status.statusCategory.key === 'done' && child.fields.resolutiondate) {
+            const resolutionDate = new Date(child.fields.resolutiondate)
+            if (resolutionDate.getFullYear() === currentYear) {
+                const month = resolutionDate.getMonth()
+                if (month <= 2) quarterlyCompletion.Q1++
+                else if (month <= 5) quarterlyCompletion.Q2++
+                else if (month <= 8) quarterlyCompletion.Q3++
+                else quarterlyCompletion.Q4++
+            }
+        }
+        // Also count subtasks
+        if (child.subtasks) {
+            child.subtasks.forEach(sub => {
+                if (sub.fields.status.statusCategory.key === 'done' && sub.fields.resolutiondate) {
+                    const resolutionDate = new Date(sub.fields.resolutiondate)
+                    if (resolutionDate.getFullYear() === currentYear) {
+                        const month = resolutionDate.getMonth()
+                        if (month <= 2) quarterlyCompletion.Q1++
+                        else if (month <= 5) quarterlyCompletion.Q2++
+                        else if (month <= 8) quarterlyCompletion.Q3++
+                        else quarterlyCompletion.Q4++
+                    }
+                }
+            })
+        }
+    })
+
+    const quarterlyData = [
+        { quarter: 'Q1', count: quarterlyCompletion.Q1, color: '#3B82F6' },
+        { quarter: 'Q2', count: quarterlyCompletion.Q2, color: '#10B981' },
+        { quarter: 'Q3', count: quarterlyCompletion.Q3, color: '#F59E0B' },
+        { quarter: 'Q4', count: quarterlyCompletion.Q4, color: '#8B5CF6' },
     ]
 
     return (
@@ -278,6 +340,25 @@ export function EpicAnalysis() {
                 </Card>
             </div>
 
+            {/* Time Tracking Summary Panel */}
+            <Card>
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                        <Clock className="w-5 h-5" /> Summary Panel (Time Tracking)
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-col space-y-2">
+                        <div className="flex justify-between text-sm font-medium">
+                            <span>Time</span>
+                            <span>{totalSpentHours}h / {totalEstimateHours}h</span>
+                        </div>
+                        <Progress value={timeProgress} className="h-4" />
+                        <p className="text-xs text-muted-foreground text-right">{timeProgress}% consumed</p>
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* Charts Row */}
             <div className="grid gap-4 md:grid-cols-2">
                 {/* Task Distribution Pie */}
@@ -344,6 +425,37 @@ export function EpicAnalysis() {
                 </Card>
             </div>
 
+            {/* Quarterly Completion Chart */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Tarefas Concluídas por Trimestre ({currentYear})</CardTitle>
+                    <CardDescription>Quantidade de tarefas finalizadas em cada período</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="h-[280px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={quarterlyData}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={true}
+                                    label={({ quarter, count }) => `${quarter}: ${count}`}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    dataKey="count"
+                                >
+                                    {quarterlyData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* Breakdown List */}
             <Card className="col-span-1 lg:col-span-2">
                 <CardHeader>
@@ -366,13 +478,17 @@ function TaskRow({ task }: { task: JiraIssue }) {
     const [expanded, setExpanded] = useState(false)
     const hasSubtasks = task.subtasks && task.subtasks.length > 0
 
+    // Task Own Time
+    const selfSpent = (task.fields.timespent || 0) / 3600
+    const selfEst = (task.fields.timeoriginalestimate || 0) / 3600
+
     return (
         <div className="border-b last:border-0 pb-2">
             <div
                 className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group"
                 onClick={() => setExpanded(!expanded)}
             >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 flex-grow">
                     {hasSubtasks ? (
                         <div className="text-muted-foreground">
                             {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -380,7 +496,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                     ) : (
                         <div className="w-4" /> // Spacer
                     )}
-                    <div className="space-y-1">
+                    <div className="space-y-1 flex-grow">
                         <div className="flex items-center gap-2">
                             <p className="text-sm font-medium leading-none group-hover:text-primary group-hover:underline">
                                 {task.key}: {task.fields.summary}
@@ -399,11 +515,20 @@ function TaskRow({ task }: { task: JiraIssue }) {
                                 <ExternalLink size={12} />
                             </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{task.fields.issuetype.name}</p>
+                        <p className="text-xs text-muted-foreground flex gap-4">
+                            <span>{task.fields.issuetype.name}</span>
+                            {/* Time Badge */}
+                            {(selfSpent > 0 || selfEst > 0) && (
+                                <span className={`flex items-center gap-1 ${selfSpent > selfEst && selfEst > 0 ? "text-red-500 font-semibold" : "text-emerald-600"}`}>
+                                    <Clock size={10} />
+                                    {Math.round(selfSpent * 10) / 10}h / {Math.round(selfEst * 10) / 10}h
+                                </span>
+                            )}
+                        </p>
                     </div>
                 </div>
 
-                <div className={`px-2 py-1 rounded-full text-xs font-bold 
+                <div className={`px-2 py-1 rounded-full text-xs font-bold shrink-0
                     ${task.fields.status.statusCategory.key === 'done' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' :
                         task.fields.status.statusCategory.key === 'indeterminate' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100' :
                             'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'}`}>
@@ -414,30 +539,40 @@ function TaskRow({ task }: { task: JiraIssue }) {
             {/* Subtasks */}
             {expanded && hasSubtasks && (
                 <div className="ml-8 mt-2 space-y-2 border-l-2 pl-4 border-muted">
-                    {task.subtasks!.map(sub => (
-                        <div key={sub.id} className="flex items-center justify-between p-1">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">{sub.key}: {sub.fields.summary}</span>
-                                <span
-                                    className="cursor-pointer text-muted-foreground hover:text-blue-500"
-                                    onClick={(e) => {
-                                        e.stopPropagation() // Prevent row toggle
-                                        const baseUrl = localStorage.getItem("jira_url") || ""
-                                        let url = baseUrl.trim()
-                                        if (url && !url.startsWith('http')) url = `https://${url}`
-                                        url = url.replace(/\/$/, "")
-                                        if (url) window.open(`${url}/browse/${sub.key}`, '_blank')
-                                    }}
-                                >
-                                    <ExternalLink size={10} />
-                                </span>
+                    {task.subtasks!.map(sub => {
+                        const subSpent = (sub.fields.timespent || 0) / 3600
+                        const subEst = (sub.fields.timeoriginalestimate || 0) / 3600
+
+                        return (
+                            <div key={sub.id} className="flex items-center justify-between p-1">
+                                <div className="flex items-center gap-2 flex-grow">
+                                    <span className="text-xs text-muted-foreground">{sub.key}: {sub.fields.summary}</span>
+                                    <span
+                                        className="cursor-pointer text-muted-foreground hover:text-blue-500"
+                                        onClick={(e) => {
+                                            e.stopPropagation() // Prevent row toggle
+                                            const baseUrl = localStorage.getItem("jira_url") || ""
+                                            let url = baseUrl.trim()
+                                            if (url && !url.startsWith('http')) url = `https://${url}`
+                                            url = url.replace(/\/$/, "")
+                                            if (url) window.open(`${url}/browse/${sub.key}`, '_blank')
+                                        }}
+                                    >
+                                        <ExternalLink size={10} />
+                                    </span>
+                                    {(subSpent > 0 || subEst > 0) && (
+                                        <span className={`text-[10px] ml-2 ${subSpent > subEst && subEst > 0 ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+                                            ({Math.round(subSpent * 10) / 10}h / {Math.round(subEst * 10) / 10}h)
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0
+                                    ${sub.fields.status.statusCategory.key === 'done' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'}`}>
+                                    {sub.fields.status.name}
+                                </div>
                             </div>
-                            <div className={`px-2 py-0.5 rounded text-[10px] font-bold 
-                                ${sub.fields.status.statusCategory.key === 'done' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800'}`}>
-                                {sub.fields.status.name}
-                            </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             )}
         </div>
