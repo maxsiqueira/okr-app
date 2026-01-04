@@ -19,6 +19,7 @@ export function EpicAnalysis() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [selectedQuarter, setSelectedQuarter] = useState("ALL")
+    const [selectedVersion, setSelectedVersion] = useState("ALL")
 
     useEffect(() => {
         loadEpic(currentKey)
@@ -101,8 +102,17 @@ export function EpicAnalysis() {
         const qEnd = new Date(currentYear, qEndMonth + 1, 0) // Last day of end month
 
         // Check overlap: Task Start <= QEnd AND Task End >= QStart
-        return createdDate <= qEnd && endDate >= qStart
+        const quarterMatch = createdDate <= qEnd && endDate >= qStart
+        if (!quarterMatch) return false
+
+        // Version Filter
+        if (selectedVersion === "ALL") return true
+        if (selectedVersion === "Unscheduled") return !child.fields.fixVersions || child.fields.fixVersions.length === 0
+        return child.fields.fixVersions?.some(v => v.name === selectedVersion)
     })
+
+    // Extract Versions for Filter
+    const allVersions = Array.from(new Set(children.flatMap(c => c.fields.fixVersions?.map(v => v.name) || []))).sort()
 
     // UPDATE METRICS TO USE FILTERED LIST
     const doneCount = filteredChildren.filter(c => c.fields.status.statusCategory.key === "done").length
@@ -183,7 +193,16 @@ export function EpicAnalysis() {
             </div>
 
             {/* Top Metrics Row - Gauges and Status Cards */}
-            <div className="flex justify-end mb-4">
+            <div className="flex justify-end mb-4 space-x-2">
+                <select
+                    className="p-2 border rounded bg-background text-foreground"
+                    value={selectedVersion}
+                    onChange={(e) => setSelectedVersion(e.target.value)}
+                >
+                    <option value="ALL">All Versions</option>
+                    {allVersions.map(v => <option key={v} value={v}>{v}</option>)}
+                    <option value="Unscheduled">Unscheduled</option>
+                </select>
                 <select
                     className="p-2 border rounded bg-background text-foreground"
                     value={selectedQuarter}

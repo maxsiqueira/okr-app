@@ -295,13 +295,11 @@ export const JiraService = {
                     let subtasksMap: Record<string, JiraIssue[]> = {};
 
                     if (childKeys.length > 0) {
-                        // Chunking could be needed for huge lists, but 100 maxResults on subtasks is likely safe for demo.
-                        // Actually, limit usually 1000.
                         const subtaskJql = `parent in (${childKeys.join(",")})`
                         const subRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
                             jql: subtaskJql,
                             maxResults: 1000,
-                            fields: ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "resolutiondate", "duedate", "timespent", "timeoriginalestimate"]
+                            fields: ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "resolutiondate", "duedate", "timespent", "timeoriginalestimate", "fixVersions"]
                         })
                         if (subRes.ok) {
                             const subData = await subRes.json();
@@ -322,7 +320,8 @@ export const JiraService = {
                                             resolutiondate: sub.fields.resolutiondate,
                                             duedate: sub.fields.duedate,
                                             timespent: sub.fields.timespent,
-                                            timeoriginalestimate: sub.fields.timeoriginalestimate
+                                            timeoriginalestimate: sub.fields.timeoriginalestimate,
+                                            fixVersions: sub.fields.fixVersions
                                         }
                                     } as JiraIssue);
                                 }

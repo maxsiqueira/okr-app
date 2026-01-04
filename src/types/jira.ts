@@ -21,9 +21,9 @@ export interface JiraIssue {
                 "48x48": string
             }
         } | null
-        timeoriginalestimate?: number // Seconds
         timespent?: number // Seconds
         components?: { name: string }[]
+        fixVersions?: { name: string, released: boolean, releaseDate?: string }[]
         created: string
         updated: string
         resolutiondate?: string | null
