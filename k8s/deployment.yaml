@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ion-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ion-dashboard
+  template:
+    metadata:
+      labels:
+        app: ion-dashboard
+    spec:
+      containers:
+      - name: ion-dashboard
+        image: ion-dashboard:latest
+        imagePullPolicy: Never # Use local image loaded into Kind
+        ports:
+        - containerPort: 3001
