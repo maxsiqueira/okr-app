@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { JiraService } from "@/services/jira"
 import { JiraIssue } from "@/types/jira"
 import { Link } from "react-router-dom"
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Sparkles } from "lucide-react"
 import { AiService } from "@/services/ai"
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 
 export function StrategicDashboard() {
     const [okrEpics, setOkrEpics] = useState<JiraIssue[]>([])
@@ -15,6 +16,7 @@ export function StrategicDashboard() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [projectKey, setProjectKey] = useState("")
+    const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([])
 
     useEffect(() => {
         // Try to get project key from localStorage, default to ION
@@ -40,6 +42,8 @@ export function StrategicDashboard() {
                 setOkrEpics(okrData)
                 setExtraEpics(extraData)
                 setAllEpics([...okrData, ...extraData])
+                // Calculate quarterly metrics for OKR epics
+                await calculateQuarterlyMetrics(okrData)
             } else {
                 // Default Mode (Project Scan)
                 const data = await JiraService.getEpics(project)
@@ -60,6 +64,61 @@ export function StrategicDashboard() {
         setProjectKey(newKey)
         localStorage.setItem("jira_project_key", newKey)
         loadData(newKey)
+    }
+
+    const calculateQuarterlyMetrics = async (epics: JiraIssue[]) => {
+        const currentYear = new Date().getFullYear()
+        const quarterlyCompletion = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
+
+        // Fetch details for all epics in PARALLEL (not sequential)
+        const detailsPromises = epics.map(epic =>
+            JiraService.getEpicDetails(epic.key).catch(err => {
+                console.error(`Failed to fetch details for ${epic.key}`, err)
+                return null
+            })
+        )
+
+        const allDetails = await Promise.all(detailsPromises)
+
+        allDetails.forEach(details => {
+            if (!details) return
+
+            // Count completed children by quarter
+            details.children.forEach(child => {
+                if (child.fields.status.statusCategory.key === 'done' && child.fields.resolutiondate) {
+                    const resolutionDate = new Date(child.fields.resolutiondate)
+                    if (resolutionDate.getFullYear() === currentYear) {
+                        const month = resolutionDate.getMonth()
+                        if (month <= 2) quarterlyCompletion.Q1++
+                        else if (month <= 5) quarterlyCompletion.Q2++
+                        else if (month <= 8) quarterlyCompletion.Q3++
+                        else quarterlyCompletion.Q4++
+                    }
+                }
+                // Also count subtasks
+                if (child.subtasks) {
+                    child.subtasks.forEach(sub => {
+                        if (sub.fields.status.statusCategory.key === 'done' && sub.fields.resolutiondate) {
+                            const resolutionDate = new Date(sub.fields.resolutiondate)
+                            if (resolutionDate.getFullYear() === currentYear) {
+                                const month = resolutionDate.getMonth()
+                                if (month <= 2) quarterlyCompletion.Q1++
+                                else if (month <= 5) quarterlyCompletion.Q2++
+                                else if (month <= 8) quarterlyCompletion.Q3++
+                                else quarterlyCompletion.Q4++
+                            }
+                        }
+                    })
+                }
+            })
+        })
+
+        setQuarterlyData([
+            { quarter: 'Q1', count: quarterlyCompletion.Q1, color: '#3B82F6' },
+            { quarter: 'Q2', count: quarterlyCompletion.Q2, color: '#10B981' },
+            { quarter: 'Q3', count: quarterlyCompletion.Q3, color: '#F59E0B' },
+            { quarter: 'Q4', count: quarterlyCompletion.Q4, color: '#8B5CF6' },
+        ])
     }
 
     // Calculate Metrics (Combined)
@@ -145,6 +204,39 @@ export function StrategicDashboard() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Quarterly Completion Chart for OKR Epics */}
+            {quarterlyData.some(q => q.count > 0) && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Tarefas OKR Concluídas por Trimestre ({new Date().getFullYear()})</CardTitle>
+                        <CardDescription>Quantidade de tarefas finalizadas dos OKRs em cada período</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-[280px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={quarterlyData}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={true}
+                                        label={({ quarter, count }) => `${quarter}: ${count}`}
+                                        outerRadius={80}
+                                        fill="#8884d8"
+                                        dataKey="count"
+                                    >
+                                        {quarterlyData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className="grid gap-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 items-start">
                 {loading ? (

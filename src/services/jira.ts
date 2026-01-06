@@ -267,14 +267,19 @@ export const JiraService = {
 
             try {
                 console.log("[JiraService] Attempting REAL fetch (Details) for", epicKey)
+
+                // Aggressively clean credentials
+                const cleanEmail = email.trim().replace(/[\r\n\t]/g, '')
+                const cleanToken = token.trim().replace(/[\r\n\t]/g, '')
+
                 const headers = {
-                    "Authorization": `Basic ${btoa(`${email.trim()}:${token.trim()}`)}`,
+                    "Authorization": `Basic ${btoa(`${cleanEmail}:${cleanToken}`)}`,
                     "Accept": "application/json",
                     "Content-Type": "application/json"
                 }
 
-                // Fetch Epic
-                const epicRes = await fetchWithProxy(`${targetUrl}/rest/api/3/issue/${epicKey}`, 'GET', headers)
+                // Fetch Epic with time tracking fields
+                const epicRes = await fetchWithProxy(`${targetUrl}/rest/api/3/issue/${epicKey}?fields=summary,status,issuetype,assignee,created,updated,timespent,timeoriginalestimate`, 'GET', headers)
                 if (!epicRes.ok) throw new Error(`Failed to fetch epic: ${epicRes.status}`)
                 const epicData = await epicRes.json()
 
@@ -358,7 +363,9 @@ export const JiraService = {
                         issuetype: epicData.fields.issuetype,
                         assignee: epicData.fields.assignee,
                         created: epicData.fields.created,
-                        updated: epicData.fields.updated
+                        updated: epicData.fields.updated,
+                        timespent: epicData.fields.timespent,
+                        timeoriginalestimate: epicData.fields.timeoriginalestimate
                     }
                 }
 
@@ -373,8 +380,14 @@ export const JiraService = {
                 return { epic, children }
 
             } catch (error: any) {
-                console.error("[JiraService] Real fetch failed:", error)
-                throw new Error(error.message || "Failed to fetch details")
+                console.error(`[JiraService] Real fetch failed for ${epicKey}:`, error)
+                const errorMsg = error.message || "Failed to fetch details"
+                if (errorMsg.includes("404")) {
+                    throw new Error(`Epic ${epicKey} not found. Please verify the epic key exists and you have permission to view it.`)
+                } else if (errorMsg.includes("401")) {
+                    throw new Error(`Authentication failed. Please check your Jira credentials in Settings.`)
+                }
+                throw new Error(`Failed to load ${epicKey}: ${errorMsg}`)
             }
         }
 

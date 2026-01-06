@@ -135,21 +135,30 @@ export function EpicAnalysis() {
     const total = filteredChildren.length
     const percentComplete = total > 0 ? Math.round((doneCount / total) * 100) : 0
 
-    // Time Tracking Calculations (Aggregated)
+    // Time Tracking Calculations - CORRECT Jira Logic
+    // Rule: If a task has subtasks, only count subtask time (not parent time)
+    // This prevents double-counting when time is logged on both parent and subtasks
     let totalSpentSeconds = 0
     let totalEstimateSeconds = 0
 
-    filteredChildren.forEach(child => {
-        // Parent
-        totalSpentSeconds += child.fields.timespent || 0
-        totalEstimateSeconds += child.fields.timeoriginalestimate || 0
+    // 1. Include Epic's own time (if any worklogs are logged directly on the Epic)
+    totalSpentSeconds += epic.fields.timespent || 0
+    totalEstimateSeconds += epic.fields.timeoriginalestimate || 0
 
-        // Subtasks
-        if (child.subtasks) {
-            child.subtasks.forEach(sub => {
+    // 2. Include child tasks (with correct aggregation)
+    filteredChildren.forEach(child => {
+        const hasSubtasks = child.subtasks && child.subtasks.length > 0
+
+        if (hasSubtasks) {
+            // If task has subtasks, ONLY count subtask time (Jira's rule)
+            child.subtasks!.forEach(sub => {
                 totalSpentSeconds += sub.fields.timespent || 0
                 totalEstimateSeconds += sub.fields.timeoriginalestimate || 0
             })
+        } else {
+            // If no subtasks, count the parent task's time
+            totalSpentSeconds += child.fields.timespent || 0
+            totalEstimateSeconds += child.fields.timeoriginalestimate || 0
         }
     })
 
