@@ -14,6 +14,7 @@ export interface JiraIssue {
         issuetype: {
             name: string // "Epic" | "Story" | "Task" | "Bug"
             iconUrl: string
+            subtask: boolean
         }
         assignee: {
             displayName: string
@@ -22,6 +23,7 @@ export interface JiraIssue {
             }
         } | null
         timeoriginalestimate?: number // Seconds
+        timeestimate?: number // Seconds
         timespent?: number // Seconds
         components?: { name: string }[]
         fixVersions?: { name: string, released: boolean, releaseDate?: string }[]

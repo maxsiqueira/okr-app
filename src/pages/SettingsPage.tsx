@@ -16,6 +16,7 @@ export function SettingsPage() {
     const [jiraToken, setJiraToken] = useState("")
     const [okrEpics, setOkrEpics] = useState("")
     const [extraEpics, setExtraEpics] = useState("")
+    const [defaultEpicKey, setDefaultEpicKey] = useState("")
 
     // AI Creds
     const [geminiKey, setGeminiKey] = useState("")
@@ -30,6 +31,7 @@ export function SettingsPage() {
         setJiraToken(localStorage.getItem("jira_token") || "")
         setOkrEpics(localStorage.getItem("okr_epics") || "")
         setExtraEpics(localStorage.getItem("extra_epics") || "")
+        setDefaultEpicKey(localStorage.getItem("default_epic_key") || "")
         setGeminiKey(localStorage.getItem("gemini_api_key") || "")
 
         // Initial log fetch
@@ -54,6 +56,7 @@ export function SettingsPage() {
         localStorage.setItem("jira_token", jiraToken)
         localStorage.setItem("okr_epics", okrEpics)
         localStorage.setItem("extra_epics", extraEpics)
+        localStorage.setItem("default_epic_key", defaultEpicKey)
         alert("Credentials saved!")
     }
 
@@ -151,6 +154,18 @@ export function SettingsPage() {
                                     className="col-span-3"
                                     value={extraEpics}
                                     onChange={(e) => setExtraEpics(e.target.value)}
+                                />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="defaultEpic" className="text-right">
+                                    Default Epic (Analysis)
+                                </Label>
+                                <Input
+                                    id="defaultEpic"
+                                    placeholder="DEVOPS-633"
+                                    className="col-span-3"
+                                    value={defaultEpicKey}
+                                    onChange={(e) => setDefaultEpicKey(e.target.value)}
                                 />
                             </div>
                             <div className="flex justify-end">
