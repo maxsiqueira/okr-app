@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { JiraService } from "@/services/jira"
 import { JiraIssue } from "@/types/jira"
 import { Link } from "react-router-dom"
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Sparkles } from "lucide-react"
 import { AiService } from "@/services/ai"
+import { Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 
 export function StrategicDashboard() {
     const [okrEpics, setOkrEpics] = useState<JiraIssue[]>([])
@@ -15,15 +16,18 @@ export function StrategicDashboard() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [projectKey, setProjectKey] = useState("")
+    const [selectedVersion, setSelectedVersion] = useState("ALL")
+    const [allVersions, setAllVersions] = useState<string[]>([])
+    const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([])
+    const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
 
     useEffect(() => {
-        // Try to get project key from localStorage, default to ION
         const savedProjectKey = localStorage.getItem("jira_project_key") || "ION"
         setProjectKey(savedProjectKey)
-        loadData(savedProjectKey)
-    }, [])
+        loadData(savedProjectKey, selectedVersion)
+    }, [selectedVersion])
 
-    const loadData = async (project: string) => {
+    const loadData = async (project: string, version: string = "ALL") => {
         setLoading(true)
         setError(null)
         try {
@@ -31,26 +35,58 @@ export function StrategicDashboard() {
             const okrIds = (localStorage.getItem("okr_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
             const extraIds = (localStorage.getItem("extra_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
 
+            let fetchedOkr: JiraIssue[] = []
+            let fetchedExtra: JiraIssue[] = []
+            let fetchedAll: JiraIssue[] = []
+
             if (okrIds.length > 0 || extraIds.length > 0) {
                 // Configured Mode
                 const [okrData, extraData] = await Promise.all([
-                    JiraService.getEpicsByKeys(okrIds),
-                    JiraService.getEpicsByKeys(extraIds)
+                    JiraService.getEpicsByKeys(okrIds, version),
+                    JiraService.getEpicsByKeys(extraIds, version)
                 ])
-                setOkrEpics(okrData)
-                setExtraEpics(extraData)
-                setAllEpics([...okrData, ...extraData])
+                fetchedOkr = okrData
+                fetchedExtra = extraData
+                fetchedAll = [...okrData, ...extraData]
             } else {
                 // Default Mode (Project Scan)
-                const data = await JiraService.getEpics(project)
-                setAllEpics(data)
-                setOkrEpics(data) // Treat all as main for now
-                setExtraEpics([])
-                if (data.length === 0) {
-                    setError(`No epics found in project "${project}". Try a different project key or configure specific Epics in Settings.`)
+                fetchedAll = await JiraService.getEpics(project, version)
+                fetchedOkr = fetchedAll
+                fetchedExtra = []
+            }
+
+            setOkrEpics(fetchedOkr)
+            setExtraEpics(fetchedExtra)
+            setAllEpics(fetchedAll)
+
+            if (fetchedAll.length === 0) {
+                if (okrIds.length > 0 || extraIds.length > 0) {
+                    setError(`As chaves configuradas (OKR/Extra) não foram encontradas. Verifique se os IDs estão corretos nas Configurações.`)
+                } else if (!project) {
+                    setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
+                } else {
+                    setError(`Nenhum Epic encontrado no projeto "${project}". Tente outra chave ou configure Epics específicos.`)
                 }
             }
+
+            // Extract all unique versions for the dropdown
+            const versions = new Set<string>()
+            fetchedAll.forEach(epic => {
+                if (epic.fields.fixVersions) {
+                    epic.fields.fixVersions.forEach(v => versions.add(v.name))
+                }
+            })
+            if (versions.size > 0) {
+                setAllVersions(Array.from(versions).sort())
+            }
+
+            // Calculate quarterly metrics for OKR epics
+            if (fetchedOkr.length > 0) {
+                await calculateQuarterlyMetrics(fetchedOkr)
+            }
+
         } catch (err) {
+            console.error(err)
             setError(`Failed to load epics. Check your credentials.`)
         }
         setLoading(false)
@@ -59,13 +95,85 @@ export function StrategicDashboard() {
     const handleProjectChange = (newKey: string) => {
         setProjectKey(newKey)
         localStorage.setItem("jira_project_key", newKey)
-        loadData(newKey)
+        loadData(newKey, selectedVersion)
+    }
+
+    const calculateQuarterlyMetrics = async (epics: JiraIssue[]) => {
+
+        const detailsPromises = epics.map(epic =>
+            JiraService.getEpicDetails(epic.key).catch(err => {
+                console.error(`Failed to fetch details for ${epic.key}`, err)
+                return null
+            })
+        )
+
+        const allDetails = await Promise.all(detailsPromises)
+
+        const getStatsForYear = (year: number) => {
+            const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
+            allDetails.forEach(details => {
+                if (!details) return
+                details.children.forEach(child => {
+                    const dStr = child.fields.resolutiondate || child.fields.updated
+                    if (child.fields.status.statusCategory.key === 'done' && dStr) {
+                        const resolutionDate = new Date(dStr)
+                        if (resolutionDate.getFullYear() === year) {
+                            const month = resolutionDate.getMonth()
+                            if (month <= 2) stats.Q1++
+                            else if (month <= 5) stats.Q2++
+                            else if (month <= 8) stats.Q3++
+                            else stats.Q4++
+                        }
+                    }
+                    if (child.subtasks) {
+                        child.subtasks.forEach(sub => {
+                            const sdStr = sub.fields.resolutiondate || sub.fields.updated
+                            if (sub.fields.status.statusCategory.key === 'done' && sdStr) {
+                                const resolutionDate = new Date(sdStr)
+                                if (resolutionDate.getFullYear() === year) {
+                                    const month = resolutionDate.getMonth()
+                                    if (month <= 2) stats.Q1++
+                                    else if (month <= 5) stats.Q2++
+                                    else if (month <= 8) stats.Q3++
+                                    else stats.Q4++
+                                }
+                            }
+                        })
+                    }
+                })
+            })
+            return stats
+        }
+
+        const yearsToTry = [new Date().getFullYear(), 2025, 2024]
+        let bestYear = yearsToTry[0]
+        let maxCount = -1
+        let bestStats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
+
+        for (const year of yearsToTry) {
+            const stats = getStatsForYear(year)
+            const total = Object.values(stats).reduce((a, b) => a + b, 0)
+            if (total > maxCount) {
+                maxCount = total
+                bestYear = year
+                bestStats = stats
+            }
+        }
+
+        setDisplayYear(bestYear)
+        setQuarterlyData([
+            { quarter: 'Q1', count: bestStats.Q1, color: '#3B82F6' },
+            { quarter: 'Q2', count: bestStats.Q2, color: '#10B981' },
+            { quarter: 'Q3', count: bestStats.Q3, color: '#F59E0B' },
+            { quarter: 'Q4', count: bestStats.Q4, color: '#8B5CF6' },
+        ])
     }
 
     // Calculate Metrics (Combined)
-    const totalInitiatives = allEpics.length
-    const doneCount = allEpics.filter(e => e.fields.status.statusCategory.key === "done").length
-    const progressPercent = totalInitiatives > 0 ? Math.round((doneCount / totalInitiatives) * 100) : 0
+    const activeEpics = allEpics.filter(e => !e.fields.status.name.toLowerCase().includes("cancel"))
+    const totalInitiatives = activeEpics.length
+    const totalProgress = activeEpics.reduce((acc, e) => acc + (e.progress ?? 0), 0)
+    const progressPercent = totalInitiatives > 0 ? Math.round(totalProgress / totalInitiatives) : 0
 
     const EpicList = ({ title, list }: { title: string, list: JiraIssue[] }) => (
         <div className="space-y-4 mb-8">
@@ -103,6 +211,16 @@ export function StrategicDashboard() {
             <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold tracking-tight">Strategic Overview</h2>
                 <div className="flex items-center space-x-2">
+                    <select
+                        className="p-1.5 border rounded bg-background text-sm font-medium"
+                        value={selectedVersion}
+                        onChange={(e) => setSelectedVersion(e.target.value)}
+                    >
+                        <option value="ALL">All Versions</option>
+                        {allVersions.map(v => (
+                            <option key={v} value={v}>{v}</option>
+                        ))}
+                    </select>
                     <Input
                         placeholder="Project Key (e.g. DEVOPS)"
                         value={projectKey}
@@ -141,10 +259,37 @@ export function StrategicDashboard() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{progressPercent}%</div>
-                        <p className="text-xs text-muted-foreground">{doneCount} of {totalInitiatives} initiatives done</p>
+                        <p className="text-xs text-muted-foreground">Average Reach of active initiatives</p>
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Quarterly Completion Chart for OKR Epics */}
+            {quarterlyData.some(q => q.count > 0) && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Tarefas OKR Concluídas por Trimestre ({displayYear})</CardTitle>
+                        <CardDescription>Quantidade de tarefas finalizadas dos OKRs em cada período</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-[280px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={quarterlyData}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="quarter" />
+                                    <YAxis allowDecimals={false} />
+                                    <Tooltip cursor={{ fill: 'transparent' }} />
+                                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                                        {quarterlyData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className="grid gap-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 items-start">
                 {loading ? (
@@ -192,7 +337,7 @@ function AiInsightsSection({ epics }: { epics: JiraIssue[] }) {
                         <Sparkles className="h-5 w-5" /> AI Analyst
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                        Get strategic insights powered by Gemini 3 Pro.
+                        Get strategic insights powered by Gemini 1.5 Flash.
                     </p>
                 </div>
                 {!insight && (
