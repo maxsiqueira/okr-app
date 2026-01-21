@@ -17,6 +17,7 @@ export function SettingsPage() {
     const [okrEpics, setOkrEpics] = useState("")
     const [extraEpics, setExtraEpics] = useState("")
     const [defaultEpicKey, setDefaultEpicKey] = useState("")
+    const [debugMode, setDebugMode] = useState(false)
 
     // AI Creds
     const [geminiKey, setGeminiKey] = useState("")
@@ -33,6 +34,7 @@ export function SettingsPage() {
         setExtraEpics(localStorage.getItem("extra_epics") || "")
         setDefaultEpicKey(localStorage.getItem("default_epic_key") || "")
         setGeminiKey(localStorage.getItem("gemini_api_key") || "")
+        setDebugMode(localStorage.getItem("debug_mode") === "true")
 
         // Initial log fetch
         fetchLogs()
@@ -57,6 +59,7 @@ export function SettingsPage() {
         localStorage.setItem("okr_epics", okrEpics)
         localStorage.setItem("extra_epics", extraEpics)
         localStorage.setItem("default_epic_key", defaultEpicKey)
+        localStorage.setItem("debug_mode", debugMode ? "true" : "false")
         alert("Credentials saved!")
     }
 
@@ -167,6 +170,21 @@ export function SettingsPage() {
                                     value={defaultEpicKey}
                                     onChange={(e) => setDefaultEpicKey(e.target.value)}
                                 />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="debugMode" className="text-right">
+                                    Debug Mode
+                                </Label>
+                                <div className="col-span-3 flex items-center space-x-2">
+                                    <input
+                                        id="debugMode"
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                                        checked={debugMode}
+                                        onChange={(e) => setDebugMode(e.target.checked)}
+                                    />
+                                    <span className="text-sm text-muted-foreground">Ativar log de JQL e Performance</span>
+                                </div>
                             </div>
                             <div className="flex justify-end">
                                 <Button onClick={handleSaveCreds} variant="secondary">Save Credentials</Button>

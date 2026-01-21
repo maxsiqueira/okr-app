@@ -5,6 +5,7 @@ import { StrategicDashboard } from "@/pages/StrategicDashboard"
 import { OkrTracking } from "@/pages/OkrTracking"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { EpicAnalysis } from "@/pages/EpicAnalysis"
+import { DebugOverlay } from "@/components/DebugOverlay"
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>
+        <DebugOverlay />
       </BrowserRouter>
     </ThemeProvider>
   )

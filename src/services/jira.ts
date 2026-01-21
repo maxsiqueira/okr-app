@@ -1,5 +1,13 @@
 import { JiraIssue } from "@/types/jira"
 
+// Debug Store
+export let debugLogs: { timestamp: string, type: string, message: string, jql?: string, duration?: number, size?: number }[] = [];
+const addDebugLog = (log: { type: string, message: string, jql?: string, duration?: number, size?: number }) => {
+    if (localStorage.getItem("debug_mode") !== "true") return;
+    debugLogs = [{ timestamp: new Date().toISOString(), ...log }, ...debugLogs].slice(0, 50);
+    window.dispatchEvent(new CustomEvent('jira-debug-log'));
+};
+
 const MOCK_DELAY = 800
 
 // Mock Data
@@ -32,6 +40,7 @@ const MOCK_EPICS: JiraIssue[] = [
 
 // Helper for Proxy Fetching
 const fetchWithProxy = async (targetUrl: string, method: string = 'GET', headers: any = {}, body: any = null) => {
+    const start = performance.now();
     try {
         const response = await fetch('/api/proxy', {
             method: 'POST',
@@ -45,6 +54,17 @@ const fetchWithProxy = async (targetUrl: string, method: string = 'GET', headers
                 body
             })
         });
+        const duration = Math.round(performance.now() - start);
+
+        if (localStorage.getItem("debug_mode") === "true") {
+            addDebugLog({
+                type: response.ok ? 'API_SUCCESS' : 'API_ERROR',
+                message: `${method} ${targetUrl.split('/rest/api/3/')[1] || targetUrl}`,
+                jql: body?.jql,
+                duration
+            });
+        }
+
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[JiraService] Proxy response not OK: ${response.status} ${response.statusText}`, errorText);
@@ -66,6 +86,7 @@ const fetchAllIssues = async (targetUrl: string, headers: any, jql: string, fiel
     let isLastPage = false
     const pageSize = 50 // Safe batch size
 
+    const start = performance.now()
     console.log(`[JiraService] Starting modern paginated fetch for: ${jql}`)
 
     try {
@@ -100,6 +121,15 @@ const fetchAllIssues = async (targetUrl: string, headers: any, jql: string, fiel
         console.error("[JiraService] fetchAllIssues error:", error)
         throw error
     }
+
+    const duration = Math.round(performance.now() - start)
+    addDebugLog({
+        type: 'JQL_SEARCH',
+        message: `Total ${allIssues.length} issues found`,
+        jql,
+        duration,
+        size: allIssues.length
+    })
 
     return allIssues
 }
@@ -187,7 +217,11 @@ export const JiraService = {
                     })
 
                     const doneCount = activeDirect.filter(i => i.fields.status.statusCategory.key === "done").length
-                    const totalCount = activeDirect.length
+                    const totalCount = directChildren.filter(issue => {
+                        const isMajor = !issue.fields.issuetype.subtask
+                        const matchesVersion = version === "ALL" || (issue.fields.fixVersions && issue.fields.fixVersions.some((v: any) => v.name === version))
+                        return isMajor && matchesVersion
+                    }).length
                     const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
 
                     return {
@@ -255,7 +289,7 @@ export const JiraService = {
                 // "parent in (A, B, C)"
 
                 const childrenJql = `parent in ("${keys.map(k => k.trim()).join('","')}")`
-                const childrenIssues = await fetchAllIssues(targetUrl, headers, childrenJql, ["status", "parent", "fixVersions"])
+                const childrenIssues = await fetchAllIssues(targetUrl, headers, childrenJql, ["status", "parent", "fixVersions", "issuetype"])
 
                 let childrenMap: Record<string, any[]> = {}
                 if (childrenIssues) {
@@ -305,7 +339,11 @@ export const JiraService = {
                     })
 
                     const doneCount = activeDirectChildren.filter((i: any) => i.fields.status.statusCategory.key === "done").length
-                    const totalCount = activeDirectChildren.length
+                    const totalCount = children.filter((issue: any) => {
+                        const isMajor = !issue.fields.issuetype.subtask
+                        const matchesVersion = version === "ALL" || (issue.fields.fixVersions && issue.fields.fixVersions.some((v: any) => v.name === version))
+                        return isMajor && matchesVersion
+                    }).length
                     const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
 
                     return {
@@ -535,10 +573,11 @@ export const JiraService = {
         }
     },
 
-    getOkrMetrics: async (): Promise<{ cycleTime: any[], aiAdoption: any[] }> => {
+    getOkrMetrics: async (): Promise<{ cycleTime: any[], aiAdoption: any[], epicStats: { total: number, done: number, percent: number } }> => {
         const url = localStorage.getItem("jira_url")
         const email = localStorage.getItem("jira_email")
         const token = localStorage.getItem("jira_token")
+        const okrIds = (localStorage.getItem("okr_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
 
         if (url && email && token) {
             let targetUrl = url.trim();
@@ -552,72 +591,81 @@ export const JiraService = {
                     "Content-Type": "application/json"
                 }
 
-                // 1. Velocity (Cycle Time Proxy)
-                // 1. Velocity (Cycle Time Proxy)
+                // 1. Throughput (All finished items in 2025)
                 const velocityRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
-                    jql: "resolved >= -180d",
+                    jql: 'resolved >= "2025-01-01" AND resolved <= "2025-12-31"',
                     maxResults: 1000,
                     fields: ["created", "resolutiondate"]
                 })
+
+                let cycleTime: any[] = []
                 if (velocityRes.ok) {
                     const data = await velocityRes.json()
                     const issues = data.issues
 
+                    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
                     const months: Record<string, number> = {}
-                    for (let i = 5; i >= 0; i--) {
-                        const d = new Date()
-                        d.setMonth(d.getMonth() - i)
-                        const key = d.toLocaleString('default', { month: 'short' })
-                        months[key] = 0
-                    }
+                    monthNames.forEach(m => months[m] = 0)
 
                     issues.forEach((i: any) => {
-                        const d = new Date(i.fields.resolutiondate)
-                        const key = d.toLocaleString('default', { month: 'short' })
-                        if (months[key] !== undefined) months[key]++
+                        const dStr = i.fields.resolutiondate || i.fields.updated
+                        if (dStr) {
+                            const d = new Date(dStr)
+                            if (d.getFullYear() === 2025) {
+                                const key = monthNames[d.getMonth()]
+                                if (months[key] !== undefined) months[key]++
+                            }
+                        }
                     })
 
-                    const cycleTime = Object.keys(months).map(k => ({ month: k, days: months[k] }))
-
-                    // 2. AI Adoption
-                    // 2. AI Adoption
-                    const aiRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
-                        jql: 'labels = "ai-assisted"',
-                        maxResults: 1
-                    })
-                    const manualRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
-                        jql: 'labels != "ai-assisted" OR labels is EMPTY',
-                        maxResults: 1
-                    })
-
-                    let aiCount = 0
-                    let manualCount = 0
-
-                    if (aiRes.ok) aiCount = (await aiRes.json()).total
-                    if (manualRes.ok) manualCount = (await manualRes.json()).total
-
-                    const aiAdoption = [
-                        { name: 'Manual', value: manualCount },
-                        { name: 'AI Assisted', value: aiCount }
-                    ]
-
-                    return { cycleTime, aiAdoption }
+                    cycleTime = monthNames.map(name => ({ month: name, days: months[name] }))
                 }
+
+                // 2. AI Adoption (2025 focus)
+                const aiRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
+                    jql: 'labels = "ai-assisted" AND resolved >= "2025-01-01"',
+                    maxResults: 1
+                })
+                const manualRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
+                    jql: '(labels != "ai-assisted" OR labels is EMPTY) AND resolved >= "2025-01-01"',
+                    maxResults: 1
+                })
+
+                let aiCount = 0
+                let manualCount = 0
+
+                if (aiRes.ok) aiCount = (await aiRes.json()).total
+                if (manualRes.ok) manualCount = (await manualRes.json()).total
+
+                const aiAdoption = [
+                    { name: 'Manual', value: manualCount },
+                    { name: 'AI Assisted', value: aiCount }
+                ]
+
+                // 3. Epic Conclusion (OKR specific)
+                let epicStats = { total: 0, done: 0, percent: 0 }
+                if (okrIds.length > 0) {
+                    const epicsJql = `key in ("${okrIds.join('","')}")`
+                    const epicsRes = await fetchWithProxy(`${targetUrl}/rest/api/3/search/jql`, 'POST', headers, {
+                        jql: epicsJql,
+                        fields: ["status"]
+                    })
+                    if (epicsRes.ok) {
+                        const data = await epicsRes.json()
+                        const epics = data.issues || []
+                        epicStats.total = epics.length
+                        epicStats.done = epics.filter((e: any) => e.fields.status.statusCategory.key === "done").length
+                        epicStats.percent = epicStats.total > 0 ? Math.round((epicStats.done / epicStats.total) * 100) : 0
+                    }
+                }
+
+                return { cycleTime, aiAdoption, epicStats }
+
             } catch (e) {
                 console.error("[JiraService] Metrics fetch failed", e)
             }
         }
-
-        // Mock Fallback
-        return {
-            cycleTime: [
-                { month: 'Jan', days: 12 }, { month: 'Feb', days: 10 }, { month: 'Mar', days: 8 },
-                { month: 'Apr', days: 5 }, { month: 'May', days: 4 }, { month: 'Jun', days: 3 },
-            ],
-            aiAdoption: [
-                { name: 'Manual', value: 40 }, { name: 'AI Assisted', value: 60 },
-            ]
-        }
+        return { cycleTime: [], aiAdoption: [], epicStats: { total: 0, done: 0, percent: 0 } }
     },
 
     // Kept for backward compatibility but unused internally now

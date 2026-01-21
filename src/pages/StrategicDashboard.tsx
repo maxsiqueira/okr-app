@@ -60,7 +60,13 @@ export function StrategicDashboard() {
             setAllEpics(fetchedAll)
 
             if (fetchedAll.length === 0) {
-                setError(`No epics found in project "${project}". Try a different project key or configure specific Epics in Settings.`)
+                if (okrIds.length > 0 || extraIds.length > 0) {
+                    setError(`As chaves configuradas (OKR/Extra) não foram encontradas. Verifique se os IDs estão corretos nas Configurações.`)
+                } else if (!project) {
+                    setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
+                } else {
+                    setError(`Nenhum Epic encontrado no projeto "${project}". Tente outra chave ou configure Epics específicos.`)
+                }
             }
 
             // Extract all unique versions for the dropdown
@@ -93,8 +99,6 @@ export function StrategicDashboard() {
     }
 
     const calculateQuarterlyMetrics = async (epics: JiraIssue[]) => {
-        const currentYear = new Date().getFullYear()
-        const previousYear = currentYear - 1
 
         const detailsPromises = epics.map(epic =>
             JiraService.getEpicDetails(epic.key).catch(err => {
@@ -110,8 +114,9 @@ export function StrategicDashboard() {
             allDetails.forEach(details => {
                 if (!details) return
                 details.children.forEach(child => {
-                    if (child.fields.status.statusCategory.key === 'done' && child.fields.resolutiondate) {
-                        const resolutionDate = new Date(child.fields.resolutiondate)
+                    const dStr = child.fields.resolutiondate || child.fields.updated
+                    if (child.fields.status.statusCategory.key === 'done' && dStr) {
+                        const resolutionDate = new Date(dStr)
                         if (resolutionDate.getFullYear() === year) {
                             const month = resolutionDate.getMonth()
                             if (month <= 2) stats.Q1++
@@ -122,8 +127,9 @@ export function StrategicDashboard() {
                     }
                     if (child.subtasks) {
                         child.subtasks.forEach(sub => {
-                            if (sub.fields.status.statusCategory.key === 'done' && sub.fields.resolutiondate) {
-                                const resolutionDate = new Date(sub.fields.resolutiondate)
+                            const sdStr = sub.fields.resolutiondate || sub.fields.updated
+                            if (sub.fields.status.statusCategory.key === 'done' && sdStr) {
+                                const resolutionDate = new Date(sdStr)
                                 if (resolutionDate.getFullYear() === year) {
                                     const month = resolutionDate.getMonth()
                                     if (month <= 2) stats.Q1++
@@ -139,20 +145,27 @@ export function StrategicDashboard() {
             return stats
         }
 
-        let stats = getStatsForYear(currentYear)
-        let activeYear = currentYear
+        const yearsToTry = [new Date().getFullYear(), 2025, 2024]
+        let bestYear = yearsToTry[0]
+        let maxCount = -1
+        let bestStats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
 
-        if (Object.values(stats).reduce((a, b) => a + b, 0) === 0) {
-            stats = getStatsForYear(previousYear)
-            activeYear = previousYear
+        for (const year of yearsToTry) {
+            const stats = getStatsForYear(year)
+            const total = Object.values(stats).reduce((a, b) => a + b, 0)
+            if (total > maxCount) {
+                maxCount = total
+                bestYear = year
+                bestStats = stats
+            }
         }
 
-        setDisplayYear(activeYear)
+        setDisplayYear(bestYear)
         setQuarterlyData([
-            { quarter: 'Q1', count: stats.Q1, color: '#3B82F6' },
-            { quarter: 'Q2', count: stats.Q2, color: '#10B981' },
-            { quarter: 'Q3', count: stats.Q3, color: '#F59E0B' },
-            { quarter: 'Q4', count: stats.Q4, color: '#8B5CF6' },
+            { quarter: 'Q1', count: bestStats.Q1, color: '#3B82F6' },
+            { quarter: 'Q2', count: bestStats.Q2, color: '#10B981' },
+            { quarter: 'Q3', count: bestStats.Q3, color: '#F59E0B' },
+            { quarter: 'Q4', count: bestStats.Q4, color: '#8B5CF6' },
         ])
     }
 
@@ -324,7 +337,7 @@ function AiInsightsSection({ epics }: { epics: JiraIssue[] }) {
                         <Sparkles className="h-5 w-5" /> AI Analyst
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                        Get strategic insights powered by Gemini 3 Pro.
+                        Get strategic insights powered by Gemini 1.5 Flash.
                     </p>
                 </div>
                 {!insight && (
