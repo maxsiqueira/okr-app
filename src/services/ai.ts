@@ -1,6 +1,8 @@
 
 interface AnalysisContext {
     epics: any[]
+    strategicObjectives?: any[]
+    manualOkrs?: any[]
     metrics?: any
 }
 
@@ -11,95 +13,91 @@ export const AiService = {
             const apiKey = rawKey?.trim()
 
             if (apiKey && apiKey !== "") {
-                // Version marker to confirm user is running NEW code (v4)
+                // Version marker (v8 - Autodiscovery Mode)
                 return await generateRealInsight(apiKey, context)
             } else {
                 return generateHeuristicInsight(context)
             }
         } catch (error: any) {
             console.error("AI Service Error:", error)
-            // Unique prefix to distinguish from old cached error message
-            return `AI Error (v4): ${error.message}. Please check your API key.`
+            return `AI Error (v8): ${error.message}. Verifique sua chave no Google AI Studio (aistudio.google.com).`
         }
     }
 }
 
 async function generateRealInsight(apiKey: string, context: AnalysisContext): Promise<string> {
-    const totalEpics = context.epics.length
-    const doneEpics = context.epics.filter(e => e.fields.status.statusCategory.key === 'done').length
-
-    // Safety check for payload size
-    const epicSummary = context.epics.slice(0, 10).map(e => ({
+    const inputData = context.epics.map(e => ({
         key: e.key,
         summary: e.fields.summary,
-        status: e.fields.status.name
-    }))
+        status: e.fields.status.name,
+        progress: e.progress
+    }));
 
-    const prompt = `
-        Analyze this Jira project:
-        - Total Initiatives: ${totalEpics}
-        - Completed: ${doneEpics}
-        - Details: ${JSON.stringify(epicSummary)}
-        
-        Provide 3 strategic agile advice points. Max 100 words.
-    `
+    const prompt = `Analise os seguintes dados OKR da ION Sistemas e gere um relatório executivo PT-BR estruturado (1. Sumário, 2. Progresso Real, 3. Riscos). 
+    Dados: Iniciativas Jira: ${JSON.stringify(inputData.slice(0, 30))}, Objetivos: ${JSON.stringify(context.strategicObjectives || [])}`;
 
-    // Primary: Gemini 1.5 Flash (Most compatible across all tiers in 2026/2025)
-    // Secondary: Gemini 1.5 Pro
-    const models = [
-        { id: 'gemini-1.5-flash', ver: 'v1' },
-        { id: 'gemini-1.5-pro', ver: 'v1' }
-    ]
+    /**
+     * ESTRATÉGIA DE AUTODESCORBERTA (v8)
+     * Em vez de adivinhar o ID do modelo (que varia por região/conta),
+     * primeiro perguntamos ao Google quais modelos esta chave PODE usar.
+     */
+    try {
+        console.log("AI Service (v8): Iniciando autodescoberta de modelos...");
+        const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
 
-    let finalError = ""
+        if (listRes.ok) {
+            const listData = await listRes.json();
+            const availableModels = listData.models || [];
 
-    for (const model of models) {
-        const url = `https://generativelanguage.googleapis.com/${model.ver}/models/${model.id}:generateContent?key=${apiKey}`;
+            // Filtra modelos que suportam geração de conteúdo e prioriza Flash > Pro
+            const bestModel = availableModels.find((m: any) => m.name.includes("gemini-1.5-flash") && m.supportedGenerationMethods.includes("generateContent"))
+                || availableModels.find((m: any) => m.name.includes("gemini-1.5-pro") && m.supportedGenerationMethods.includes("generateContent"))
+                || availableModels.find((m: any) => m.supportedGenerationMethods.includes("generateContent"));
 
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
+            if (bestModel) {
+                console.log(`AI Service (v8): Modelo selecionado automaticamente: ${bestModel.name}`);
+                const url = `https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${apiKey}`;
+                const genRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
 
-            if (response.ok) {
-                const data = await response.json();
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (text) return text;
-            } else {
-                const errorData = await response.json().catch(() => ({}));
-                const msg = errorData.error?.message || response.statusText;
-                finalError = `[${model.id}] ${response.status} ${msg}`;
-
-                if (response.status === 404) {
-                    console.warn(`Model ${model.id} not found, trying fallback...`);
-                    continue;
+                if (genRes.ok) {
+                    const data = await genRes.json();
+                    return data.candidates?.[0]?.content?.parts?.[0]?.text || "Erro na resposta do modelo.";
                 }
-                throw new Error(finalError);
+            } else {
+                console.warn("AI Service (v8): Nenhum modelo compatível encontrado na lista.");
             }
-        } catch (e: any) {
-            if (e.message.includes('404')) continue;
-            throw e;
+        } else {
+            const errData = await listRes.json().catch(() => ({}));
+            console.error("AI Service (v8): Falha ao listar modelos", errData);
         }
+    } catch (e) {
+        console.error("AI Service (v8): Erro durante autodescoberta", e);
     }
 
-    throw new Error(finalError || "Model not found. Ensure your API key has access to Gemini 1.5 Flash.");
+    // FALLBACK MANUAL (Se a autodescoberta falhar)
+    const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    const res = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+
+    if (res.ok) {
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "Erro no fallback.";
+    }
+
+    const finalErr = await res.json().catch(() => ({}));
+    throw new Error(`Acesso Negado ou Modelo Indisponível. ${finalErr.error?.message || res.statusText}`);
 }
 
 function generateHeuristicInsight(context: AnalysisContext): string {
     const total = context.epics.length
-    if (total === 0) return "No active initiatives found. Consider planning your next quarter goals."
+    if (total === 0) return "Nenhuma iniciativa ativa encontrada."
     const done = context.epics.filter(e => e.fields.status.statusCategory.key === 'done').length
-    const progress = (done / total) * 100
-    let insight = "**Simulation Mode (No API Key)**\n\n"
-    if (progress < 20) {
-        insight += "• **Early Stage**: Focus on removing blockers.\n"
-    } else if (progress < 70) {
-        insight += "• **Execution Phase**: Monitor Cycle Time.\n"
-    } else {
-        insight += "• **Closing Phase**: Plan next roadmap.\n"
-    }
-    insight += `• **Throughput**: ${done}/${total} delivered.`
-    return insight
+    return `**Modo Simulação local**\n\n• Iniciativas entregues: ${done}/${total}.`
 }

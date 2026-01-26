@@ -26,6 +26,7 @@ export interface JiraIssue {
         timeestimate?: number // Seconds
         timespent?: number // Seconds
         components?: { name: string }[]
+        labels?: string[]
         fixVersions?: { name: string, released: boolean, releaseDate?: string }[]
         created: string
         updated: string
@@ -35,6 +36,15 @@ export interface JiraIssue {
         parent?: {
             key: string
         }
+        customfield_10014?: string // Epic Link (Standard ID)
+        attachment?: {
+            id: string
+            filename: string
+            content: string
+            thumbnail?: string
+            mimeType: string
+            size: number
+        }[]
     }
     progress?: number // Calculated progress (0-100)
     subtasks?: JiraIssue[] // Children logic

@@ -5,6 +5,9 @@ import { StrategicDashboard } from "@/pages/StrategicDashboard"
 import { OkrTracking } from "@/pages/OkrTracking"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { EpicAnalysis } from "@/pages/EpicAnalysis"
+import { OkrAssessment } from "@/pages/OkrAssessment"
+import { StrategicObjectives } from "@/pages/StrategicObjectives"
+import { ManualOkrs } from "@/pages/ManualOkrs"
 import { DebugOverlay } from "@/components/DebugOverlay"
 
 function App() {
@@ -17,6 +20,9 @@ function App() {
             <Route path="/strategic" element={<StrategicDashboard />} />
             <Route path="/okr" element={<OkrTracking />} />
             <Route path="/epic-analysis" element={<EpicAnalysis />} />
+            <Route path="/assessment" element={<OkrAssessment />} />
+            <Route path="/strategic-objectives" element={<StrategicObjectives />} />
+            <Route path="/manual-okrs" element={<ManualOkrs />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>

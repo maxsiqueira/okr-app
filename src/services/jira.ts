@@ -22,6 +22,8 @@ const MOCK_EPICS: JiraIssue[] = [
             assignee: { displayName: "Max Siqueira", avatarUrls: { "48x48": "" } },
             created: "2025-01-10T10:00:00.000+0000",
             updated: "2025-12-05T12:00:00.000+0000",
+            labels: ["OKR2025"],
+            components: [{ name: "Infrastructure" }]
         }
     },
     {
@@ -34,7 +36,9 @@ const MOCK_EPICS: JiraIssue[] = [
             assignee: { displayName: "AI Bot", avatarUrls: { "48x48": "" } },
             created: "2025-11-20T10:00:00.000+0000",
             updated: "2025-12-01T12:00:00.000+0000",
-        }
+            labels: ["OKR2025"],
+            components: [{ name: "Architecture" }]
+        } // Added missing closing brace here if needed, but replacement looks complete.
     }
 ]
 
@@ -164,7 +168,7 @@ export const JiraService = {
                 const jql = `project = "${projectKey}" AND (issuetype = Epic OR "Epic Link" is not EMPTY OR parent is not EMPTY)`
 
                 // USE POST /search/jql (New mandatory endpoint)
-                const fields = ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "issuelinks", "components", "fixVersions"]
+                const fields = ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "issuelinks", "components", "fixVersions", "labels"]
                 const issues = await fetchAllIssues(targetUrl, headers, jql, fields)
 
                 // 2. Separate Epics and Children
@@ -234,6 +238,8 @@ export const JiraService = {
                             assignee: epic.fields.assignee,
                             created: epic.fields.created,
                             updated: epic.fields.updated,
+                            components: epic.fields.components,
+                            labels: epic.fields.labels
                         },
                         progress
                     }
@@ -279,17 +285,12 @@ export const JiraService = {
                 const jql = `key in ("${keys.map(k => k.trim()).join('","')}")`
 
                 // USE fetchAllIssues for robust pagination
-                const fields = ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "issuelinks", "components", "fixVersions"]
+                const fields = ["summary", "status", "issuetype", "assignee", "created", "updated", "parent", "issuelinks", "components", "fixVersions", "timespent", "timeoriginalestimate"]
                 const issues = await fetchAllIssues(targetUrl, headers, jql, fields)
 
                 // Calculate progress for each Epic
-                // Note: To calculate progress accurately, we ideally need the *children* of *these* epics.
-                // For now, we will do a second query for children OR return 0 progress to avoid n+1 queries if performance is key.
-                // Let's try to fetch children in one go if possible? 
-                // "parent in (A, B, C)"
-
                 const childrenJql = `parent in ("${keys.map(k => k.trim()).join('","')}")`
-                const childrenIssues = await fetchAllIssues(targetUrl, headers, childrenJql, ["status", "parent", "fixVersions", "issuetype"])
+                const childrenIssues = await fetchAllIssues(targetUrl, headers, childrenJql, ["status", "parent", "fixVersions", "issuetype", "timespent", "timeoriginalestimate"])
 
                 let childrenMap: Record<string, any[]> = {}
                 if (childrenIssues) {
@@ -302,7 +303,7 @@ export const JiraService = {
                     })
                 }
 
-                // Calculate subtasks map for all children
+                // Calculate subtasks map for all children (Grandchildren)
                 const childKeys = childrenIssues.map((c: any) => c.key)
                 let subtasksMap: Record<string, any[]> = {}
                 if (childKeys.length > 0) {
@@ -310,7 +311,7 @@ export const JiraService = {
                     for (let i = 0; i < childKeys.length; i += batchSize) {
                         const batch = childKeys.slice(i, i + batchSize)
                         const subtaskJql = `parent in ("${batch.join('","')}")`
-                        const subtasks = await fetchAllIssues(targetUrl, headers, subtaskJql, ["status", "parent", "fixVersions"])
+                        const subtasks = await fetchAllIssues(targetUrl, headers, subtaskJql, ["status", "parent", "fixVersions", "timespent", "timeoriginalestimate"])
                         subtasks.forEach(s => {
                             const pk = s.fields.parent?.key
                             if (pk) {
@@ -323,28 +324,31 @@ export const JiraService = {
 
                 return issues.map((epic: any) => {
                     const children = childrenMap[epic.key] || []
-                    const allIssues: any[] = [] // This will contain direct children and their subtasks for other metrics if needed
-                    children.forEach(c => {
-                        allIssues.push(c)
-                        const subs = subtasksMap[c.key] || []
-                        allIssues.push(...subs)
-                    })
 
-                    // Progress calculation based on direct children only (Major issues)
-                    const activeDirectChildren = children.filter((issue: any) => {
+                    // 1. Calculate Progress
+                    // If we have children, we count them ALL (regardless of being subtasks or stories)
+                    // This solves the issue where a Story's progress depends on its Subtasks.
+                    const activeChildren = children.filter((issue: any) => {
                         const isNotCancelled = !issue.fields.status.name.toLowerCase().includes("cancel")
-                        const isMajor = !issue.fields.issuetype.subtask
                         const matchesVersion = version === "ALL" || (issue.fields.fixVersions && issue.fields.fixVersions.some((v: any) => v.name === version))
-                        return isNotCancelled && isMajor && matchesVersion
+                        return isNotCancelled && matchesVersion
                     })
 
-                    const doneCount = activeDirectChildren.filter((i: any) => i.fields.status.statusCategory.key === "done").length
-                    const totalCount = children.filter((issue: any) => {
-                        const isMajor = !issue.fields.issuetype.subtask
-                        const matchesVersion = version === "ALL" || (issue.fields.fixVersions && issue.fields.fixVersions.some((v: any) => v.name === version))
-                        return isMajor && matchesVersion
-                    }).length
+                    const doneCount = activeChildren.filter((i: any) => i.fields.status.statusCategory.key === "done").length
+                    const totalCount = activeChildren.length
                     const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+
+                    // 2. Calculate Hours (Time Spent)
+                    // Sum of: Epic itself + all children + all subtasks of children
+                    let totalSeconds = epic.fields.timespent || 0
+                    children.forEach(c => {
+                        totalSeconds += (c.fields.timespent || 0)
+                        const subs = subtasksMap[c.key] || []
+                        subs.forEach(s => {
+                            totalSeconds += (s.fields.timespent || 0)
+                        })
+                    })
+                    const totalHours = Math.round((totalSeconds / 3600) * 10) / 10 // Round to 1 decimal
 
                     return {
                         id: epic.id,
@@ -356,10 +360,12 @@ export const JiraService = {
                             assignee: epic.fields.assignee,
                             created: epic.fields.created,
                             updated: epic.fields.updated,
-                            fixVersions: epic.fields.fixVersions // Add fixVersions to epic fields
+                            fixVersions: epic.fields.fixVersions,
+                            timespent: totalSeconds // Store aggregated seconds
                         },
-                        progress
-                    }
+                        progress,
+                        totalHours // Return calculated hours directly
+                    } as any
                 })
 
             } catch (e) {
@@ -403,7 +409,7 @@ export const JiraService = {
                 // Subtasks will be fetched specifically in step 2 via their parents
                 const jql = `(parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND issuetype not in (Sub-task, Subtask, Subtarefa, "Sub-tarefa")`
                 const rawChildren = await fetchAllIssues(targetUrl, headers, jql, [
-                    "summary", "status", "issuetype", "assignee", "timeoriginalestimate", "timeestimate", "timespent", "components", "created", "updated", "resolutiondate", "duedate"
+                    "summary", "status", "issuetype", "assignee", "timeoriginalestimate", "timeestimate", "timespent", "components", "created", "updated", "resolutiondate", "duedate", "parent", "customfield_10014", "attachment"
                 ])
 
                 let children: JiraIssue[] = []
@@ -448,25 +454,32 @@ export const JiraService = {
                         }
                     }
 
-                    children = rawChildren.map((issue: any) => ({
-                        id: issue.id,
-                        key: issue.key,
-                        fields: {
-                            summary: issue.fields.summary,
-                            status: issue.fields.status,
-                            issuetype: issue.fields.issuetype,
-                            assignee: issue.fields.assignee,
-                            timeoriginalestimate: issue.fields.timeoriginalestimate,
-                            timeestimate: issue.fields.timeestimate,
-                            timespent: issue.fields.timespent,
-                            components: issue.fields.components,
-                            created: issue.fields.created,
-                            updated: issue.fields.updated,
-                            resolutiondate: issue.fields.resolutiondate,
-                            duedate: issue.fields.duedate
-                        },
-                        subtasks: subtasksMap[issue.key] || []
-                    }))
+                    children = rawChildren.map((issue: any) => {
+                        const subtasks = subtasksMap[issue.key] || []
+                        const doneSubtasks = subtasks.filter(s => s.fields.status.statusCategory.key === "done").length
+                        const childProgress = subtasks.length > 0 ? Math.round((doneSubtasks / subtasks.length) * 100) : 0
+
+                        return {
+                            id: issue.id,
+                            key: issue.key,
+                            fields: {
+                                summary: issue.fields.summary,
+                                status: issue.fields.status,
+                                issuetype: issue.fields.issuetype,
+                                assignee: issue.fields.assignee,
+                                timeoriginalestimate: issue.fields.timeoriginalestimate,
+                                timeestimate: issue.fields.timeestimate,
+                                timespent: issue.fields.timespent,
+                                components: issue.fields.components,
+                                created: issue.fields.created,
+                                updated: issue.fields.updated,
+                                resolutiondate: issue.fields.resolutiondate,
+                                duedate: issue.fields.duedate
+                            },
+                            subtasks,
+                            progress: childProgress
+                        }
+                    })
                 }
 
                 const epic: JiraIssue = {
@@ -535,6 +548,102 @@ export const JiraService = {
                 resolve({ epic, children })
             }, MOCK_DELAY)
         })
+    },
+
+    // Optimized bulk fetcher to avoid N+1 requests and browser freezing
+    getBulkEpicDetails: async (epicKeys: string[]): Promise<{ epic: JiraIssue, children: JiraIssue[] }[]> => {
+        if (!epicKeys || epicKeys.length === 0) return []
+
+        const url = localStorage.getItem("jira_url")
+        const email = localStorage.getItem("jira_email")
+        const token = localStorage.getItem("jira_token")
+
+        if (!url || !email || !token) return []
+
+        let targetUrl = url.trim();
+        if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
+        targetUrl = targetUrl.replace(/\/$/, "");
+
+        try {
+            const headers = {
+                "Authorization": `Basic ${btoa(`${email.trim()}:${token.trim()}`)}`,
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+
+            // 1. Fetch all Epics in one go
+            const epicJql = `key in ("${epicKeys.join('","')}")`
+            const epics = await fetchAllIssues(targetUrl, headers, epicJql, ["summary", "status", "issuetype", "assignee", "created", "updated", "timespent", "timeoriginalestimate"])
+
+            // 2. Fetch all Direct Children (Stories/Tasks) in one go
+            const childrenJql = `parent in ("${epicKeys.join('","')}")`
+            const allChildrenRaw = await fetchAllIssues(targetUrl, headers, childrenJql, [
+                "summary", "status", "issuetype", "assignee", "timeoriginalestimate", "timeestimate", "timespent", "components", "created", "updated", "resolutiondate", "duedate", "parent", "attachment"
+            ])
+
+            // 3. Fetch all Subtasks (Grandchildren) in one go
+            const childKeys = allChildrenRaw.map(c => c.key)
+            let subtasksMap: Record<string, any[]> = {}
+            if (childKeys.length > 0) {
+                // Batch JQL to avoid too long strings
+                const batchSize = 100
+                for (let i = 0; i < childKeys.length; i += batchSize) {
+                    const batch = childKeys.slice(i, i + batchSize)
+                    const subtaskJql = `parent in ("${batch.join('","')}")`
+                    const subs = await fetchAllIssues(targetUrl, headers, subtaskJql, [
+                        "summary", "status", "issuetype", "assignee", "created", "updated", "parent", "resolutiondate", "duedate", "timespent"
+                    ])
+                    subs.forEach(s => {
+                        const pk = s.fields.parent?.key
+                        if (pk) {
+                            if (!subtasksMap[pk]) subtasksMap[pk] = []
+                            subtasksMap[pk].push(s)
+                        }
+                    })
+                }
+            }
+
+            // 4. Map everything together
+            const results = epics.map(epicData => {
+                const epicKey = epicData.key
+                const childrenRaw = allChildrenRaw.filter(c => c.fields.parent?.key === epicKey)
+
+                const children = childrenRaw.map(issue => {
+                    const subtasks = (subtasksMap[issue.key] || []).map(sub => ({
+                        id: sub.id,
+                        key: sub.key,
+                        fields: { ...sub.fields, issuetype: { ...sub.fields.issuetype, subtask: true } }
+                    }))
+
+                    const doneSubtasks = subtasks.filter(s => s.fields.status.statusCategory.key === "done").length
+                    const progress = subtasks.length > 0 ? Math.round((doneSubtasks / subtasks.length) * 100) : 0
+
+                    return {
+                        id: issue.id,
+                        key: issue.key,
+                        fields: issue.fields,
+                        subtasks,
+                        progress
+                    }
+                })
+
+                return {
+                    epic: {
+                        id: epicData.id,
+                        key: epicData.key,
+                        fields: epicData.fields,
+                        progress: children.length > 0 ? Math.round((children.filter(c => c.fields.status.statusCategory.key === "done").length / children.length) * 100) : 0
+                    },
+                    children
+                }
+            })
+
+            return results as any
+
+        } catch (error) {
+            console.error("[JiraService] getBulkEpicDetails failed:", error)
+            return []
+        }
     },
 
     syncJiraData: async (): Promise<boolean> => {

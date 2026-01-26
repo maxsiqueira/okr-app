@@ -20,12 +20,22 @@ export function StrategicDashboard() {
     const [allVersions, setAllVersions] = useState<string[]>([])
     const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([])
     const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
+    const [strategicObjectives, setStrategicObjectives] = useState<any[]>([])
+    const [manualOkrs, setManualOkrs] = useState<any[]>([])
 
     useEffect(() => {
         const savedProjectKey = localStorage.getItem("jira_project_key") || "ION"
         setProjectKey(savedProjectKey)
         loadData(savedProjectKey, selectedVersion)
+        loadManualContext()
     }, [selectedVersion])
+
+    const loadManualContext = () => {
+        const savedObjs = localStorage.getItem("strategic_objectives")
+        const savedOkrs = localStorage.getItem("manual_okrs")
+        if (savedObjs) setStrategicObjectives(JSON.parse(savedObjs))
+        if (savedOkrs) setManualOkrs(JSON.parse(savedOkrs))
+    }
 
     const loadData = async (project: string, version: string = "ALL") => {
         setLoading(true)
@@ -99,15 +109,8 @@ export function StrategicDashboard() {
     }
 
     const calculateQuarterlyMetrics = async (epics: JiraIssue[]) => {
-
-        const detailsPromises = epics.map(epic =>
-            JiraService.getEpicDetails(epic.key).catch(err => {
-                console.error(`Failed to fetch details for ${epic.key}`, err)
-                return null
-            })
-        )
-
-        const allDetails = await Promise.all(detailsPromises)
+        const keys = epics.map(e => e.key)
+        const allDetails = await JiraService.getBulkEpicDetails(keys)
 
         const getStatsForYear = (year: number) => {
             const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
@@ -234,7 +237,11 @@ export function StrategicDashboard() {
             </div>
 
             {/* AI Insights Section */}
-            <AiInsightsSection epics={allEpics} />
+            <AiInsightsSection
+                epics={allEpics}
+                strategicObjectives={strategicObjectives}
+                manualOkrs={manualOkrs}
+            />
 
             {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4">
@@ -318,13 +325,17 @@ export function StrategicDashboard() {
     )
 }
 
-function AiInsightsSection({ epics }: { epics: JiraIssue[] }) {
+function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: JiraIssue[], strategicObjectives: any[], manualOkrs: any[] }) {
     const [insight, setInsight] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
     const handleGenerate = async () => {
         setLoading(true)
-        const result = await AiService.generateInsights({ epics })
+        const result = await AiService.generateInsights({
+            epics,
+            strategicObjectives,
+            manualOkrs
+        })
         setInsight(result)
         setLoading(false)
     }
@@ -349,11 +360,28 @@ function AiInsightsSection({ epics }: { epics: JiraIssue[] }) {
             {insight && (
                 <CardContent>
                     <div className="prose dark:prose-invert text-sm max-w-none">
-                        {insight.split('\n').map((line, i) => (
-                            <p key={i} className={line.startsWith('•') || line.startsWith('-') ? "pl-4 mb-1" : "mb-2"}>
-                                {line.replace(/\*\*/g, '')}
-                            </p>
-                        ))}
+                        {insight.split('\n').map((line, i) => {
+                            if (!line.trim()) return <div key={i} className="h-2" />
+
+                            // Handle Bold (**text**)
+                            const parts = line.split(/(\*\*.*?\*\*)/g)
+                            const content = parts.map((part, j) => {
+                                if (part.startsWith('**') && part.endsWith('**')) {
+                                    return <strong key={j}>{part.slice(2, -2)}</strong>
+                                }
+                                return part
+                            })
+
+                            if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+                                return <p key={i} className="pl-4 mb-1 flex items-start gap-2"><span>•</span><span>{content}</span></p>
+                            }
+
+                            if (line.match(/^\d\./)) {
+                                return <p key={i} className="font-bold text-base mt-4 mb-2 text-indigo-800 dark:text-indigo-400 border-b border-indigo-100 dark:border-indigo-900 pb-1">{content}</p>
+                            }
+
+                            return <p key={i} className="mb-2 leading-relaxed">{content}</p>
+                        })}
                     </div>
                 </CardContent>
             )}
