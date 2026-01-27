@@ -9,17 +9,53 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 
-// Custom 3D-like Cylinder shape
-const CylinderBar = (props: any) => {
-    const { fill, x, y, width, height } = props;
-    if (height === 0 || !height) return null;
-    const radiusX = width / 2;
-    const radiusY = 5;
+const TubularBar = (props: any) => {
+    const { fill, x, y, width, height, index } = props;
+    if (height <= 0 || !height) return null;
+
+    const topHeight = width * 0.25;
+    const gradientId = `barGradient-${index}`;
+
+    const darken = (color: string, percent: number) => {
+        if (!color.startsWith('#')) return color;
+        const num = parseInt(color.slice(1), 16);
+        const amt = Math.round(2.55 * percent);
+        const r = Math.max(0, (num >> 16) - amt);
+        const g = Math.max(0, ((num >> 8) & 0x00ff) - amt);
+        const b = Math.max(0, (num & 0x0000ff) - amt);
+        return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+    };
+
     return (
         <g>
-            <ellipse cx={x + radiusX} cy={y + height} rx={radiusX} ry={radiusY} fill={fill} filter="brightness(0.7)" />
-            <rect x={x} y={y} width={width} height={height} fill={fill} />
-            <ellipse cx={x + radiusX} cy={y} rx={radiusX} ry={radiusY} fill={fill} filter="brightness(1.2)" />
+            <defs>
+                <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor={darken(fill, 40)} />
+                    <stop offset="25%" stopColor={fill} />
+                    <stop offset="45%" stopColor={darken(fill, -25)} />
+                    <stop offset="65%" stopColor={fill} />
+                    <stop offset="100%" stopColor={darken(fill, 50)} />
+                </linearGradient>
+            </defs>
+
+            <path
+                d={`M ${x},${y + topHeight / 2} 
+                   L ${x},${y + height - topHeight / 2} 
+                   A ${width / 2},${topHeight / 2} 0 0 0 ${x + width},${y + height - topHeight / 2} 
+                   L ${x + width},${y + topHeight / 2} 
+                   A ${width / 2},${topHeight / 2} 0 0 1 ${x},${y + topHeight / 2} Z`}
+                fill={`url(#${gradientId})`}
+            />
+
+            <ellipse
+                cx={x + width / 2}
+                cy={y + topHeight / 2}
+                rx={width / 2}
+                ry={topHeight / 2}
+                fill={fill}
+                stroke={darken(fill, 10)}
+                strokeWidth={0.5}
+            />
         </g>
     );
 };
@@ -460,17 +496,17 @@ export function EpicAnalysis() {
             <div className="grid gap-4 md:grid-cols-2">
                 <Card>
                     <CardHeader><CardTitle>Distribuição de Tarefas ({selectedQuarter})</CardTitle></CardHeader>
-                    <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ value }) => `${value}`}>{chartData.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></CardContent>
+                    <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} stroke="rgba(255,255,255,0.2)" strokeWidth={2} dataKey="value" label={({ value }) => `${value}`}>{chartData.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} /><Legend /></PieChart></ResponsiveContainer></div></CardContent>
                 </Card>
                 <Card>
                     <CardHeader><CardTitle>Horas Gastas ({selectedQuarter})</CardTitle></CardHeader>
-                    <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={workloadData} cx="50%" cy="50%" outerRadius={80} dataKey="hours" label={({ name, hours }) => `${name}: ${hours}h`}>{workloadData.map((_, i) => <Cell key={i} fill={['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'][i % 4]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div></CardContent>
+                    <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={workloadData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} stroke="rgba(255,255,255,0.1)" strokeWidth={1} dataKey="hours" label={({ name, hours }) => `${name.slice(0, 10)}: ${hours}h`}>{workloadData.map((_, i) => <Cell key={i} fill={['#4F46E5', '#0EA5E9', '#F43F5E', '#10B981', '#F59E0B', '#8B5CF6'][i % 6]} />)}</Pie><Tooltip contentStyle={{ borderRadius: '12px' }} /></PieChart></ResponsiveContainer></div></CardContent>
                 </Card>
             </div>
 
             <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" /> Tarefas Concluídas por Trimestre ({displayYear})</CardTitle></CardHeader>
-                <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={quarterlyData} margin={{ top: 20 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="quarter" /><YAxis allowDecimals={false} /><Tooltip cursor={{ fill: 'transparent' }} /><Bar dataKey="count" shape={<CylinderBar />} barSize={40}>{quarterlyData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></CardContent>
+                <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={quarterlyData} margin={{ top: 20 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="quarter" /><YAxis allowDecimals={false} /><Tooltip cursor={{ fill: 'transparent' }} /><Bar dataKey="count" shape={<TubularBar />} barSize={40}>{quarterlyData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></CardContent>
             </Card>
 
             <Card>

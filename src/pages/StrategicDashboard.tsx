@@ -9,6 +9,59 @@ import { Search, Sparkles } from "lucide-react"
 import { AiService } from "@/services/ai"
 import { Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 
+const TubularBar = (props: any) => {
+    const { fill, x, y, width, height, index } = props;
+    if (height <= 0) return null;
+
+    const topHeight = width * 0.25;
+    const gradientId = `barGradient-${index}`;
+
+    const darken = (color: string, percent: number) => {
+        if (!color.startsWith('#')) return color;
+        const num = parseInt(color.slice(1), 16);
+        const amt = Math.round(2.55 * percent);
+        const r = Math.max(0, (num >> 16) - amt);
+        const g = Math.max(0, ((num >> 8) & 0x00ff) - amt);
+        const b = Math.max(0, (num & 0x0000ff) - amt);
+        return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+    };
+
+    return (
+        <g>
+            <defs>
+                <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor={darken(fill, 40)} />
+                    <stop offset="25%" stopColor={fill} />
+                    <stop offset="45%" stopColor={darken(fill, -25)} /> {/* Highlight */}
+                    <stop offset="65%" stopColor={fill} />
+                    <stop offset="100%" stopColor={darken(fill, 50)} />
+                </linearGradient>
+            </defs>
+
+            {/* Cylinder Body */}
+            <path
+                d={`M ${x},${y + topHeight / 2} 
+                   L ${x},${y + height - topHeight / 2} 
+                   A ${width / 2},${topHeight / 2} 0 0 0 ${x + width},${y + height - topHeight / 2} 
+                   L ${x + width},${y + topHeight / 2} 
+                   A ${width / 2},${topHeight / 2} 0 0 1 ${x},${y + topHeight / 2} Z`}
+                fill={`url(#${gradientId})`}
+            />
+
+            {/* Cylinder Top Cap */}
+            <ellipse
+                cx={x + width / 2}
+                cy={y + topHeight / 2}
+                rx={width / 2}
+                ry={topHeight / 2}
+                fill={fill}
+                stroke={darken(fill, 10)}
+                strokeWidth={0.5}
+            />
+        </g>
+    );
+};
+
 export function StrategicDashboard() {
     const [okrEpics, setOkrEpics] = useState<JiraIssue[]>([])
     const [extraEpics, setExtraEpics] = useState<JiraIssue[]>([])
@@ -286,7 +339,7 @@ export function StrategicDashboard() {
                                     <XAxis dataKey="quarter" />
                                     <YAxis allowDecimals={false} />
                                     <Tooltip cursor={{ fill: 'transparent' }} />
-                                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                                    <Bar dataKey="count" shape={<TubularBar />} barSize={60}>
                                         {quarterlyData.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.color} />
                                         ))}
