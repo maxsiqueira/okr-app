@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, Sparkles } from "lucide-react"
 import { JiraService } from "@/services/jira"
 import { AiService } from "@/services/ai"
+import { db } from "@/lib/firebase"
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
 
 export interface StrategicObjective {
     id: string
@@ -49,20 +51,35 @@ export function StrategicObjectives() {
     const [showTeamManager, setShowTeamManager] = useState(false)
 
     useEffect(() => {
-        const saved = localStorage.getItem("strategic_objectives")
-        if (saved) {
-            const parsed = JSON.parse(saved)
-            setObjectives(parsed)
-            fetchEpicProgress(parsed)
-        }
+        // Firestore Real-time sync for Objectives
+        const q = query(collection(db, "strategic_objectives"));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const items: StrategicObjective[] = [];
+            querySnapshot.forEach((doc) => {
+                items.push({ ...doc.data() as StrategicObjective, id: doc.id });
+            });
+            setObjectives(items);
+            fetchEpicProgress(items);
+        });
 
-        const savedTeams = localStorage.getItem("strategic_teams")
-        if (savedTeams) {
-            setTeams(JSON.parse(savedTeams))
-        } else {
-            setTeams(DEFAULT_TEAMS)
-            localStorage.setItem("strategic_teams", JSON.stringify(DEFAULT_TEAMS))
-        }
+        // Firestore Real-time sync for Teams
+        const qTeams = query(collection(db, "strategic_teams"));
+        const unsubscribeTeams = onSnapshot(qTeams, (querySnapshot) => {
+            const items: Team[] = [];
+            querySnapshot.forEach((doc) => {
+                items.push({ ...doc.data() as Team, id: doc.id });
+            });
+            if (items.length > 0) {
+                setTeams(items);
+            } else {
+                setTeams(DEFAULT_TEAMS);
+            }
+        });
+
+        return () => {
+            unsubscribe();
+            unsubscribeTeams();
+        };
     }, [])
 
     const fetchEpicProgress = async (currentObjectives: StrategicObjective[]) => {
@@ -93,21 +110,25 @@ export function StrategicObjectives() {
         setLoading(false)
     }
 
-    const saveObjectives = (items: StrategicObjective[]) => {
-        setObjectives(items)
-        localStorage.setItem("strategic_objectives", JSON.stringify(items))
-        fetchEpicProgress(items)
+    const saveObjectiveToFirestore = async (obj: StrategicObjective) => {
+        try {
+            await setDoc(doc(db, "strategic_objectives", obj.id), obj);
+        } catch (e) {
+            console.error("Error saving objective:", e);
+        }
     }
 
-    const handleAdd = () => {
+    const handleAdd = async () => {
         if (!newTitle) return
         if (editingId) {
-            const updated = objectives.map(obj =>
-                obj.id === editingId
-                    ? { ...obj, title: newTitle, description: newDesc, epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean), teamId: newTeamId }
-                    : obj
-            )
-            saveObjectives(updated)
+            const updated: StrategicObjective = {
+                id: editingId,
+                title: newTitle,
+                description: newDesc,
+                epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
+                teamId: newTeamId
+            };
+            await saveObjectiveToFirestore(updated);
             setEditingId(null)
         } else {
             const newItem: StrategicObjective = {
@@ -117,8 +138,7 @@ export function StrategicObjectives() {
                 epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
                 teamId: newTeamId
             }
-            const updated = [...objectives, newItem]
-            saveObjectives(updated)
+            await saveObjectiveToFirestore(newItem);
         }
         setNewTitle("")
         setNewDesc("")
@@ -143,29 +163,23 @@ export function StrategicObjectives() {
         setNewTeamId("")
     }
 
-    const saveTeams = (items: Team[]) => {
-        setTeams(items)
-        localStorage.setItem("strategic_teams", JSON.stringify(items))
-    }
-
-    const handleTeamAdd = (name: string) => {
+    const handleTeamAdd = async (name: string) => {
         if (!name) return
         const newTeam: Team = {
             id: Date.now().toString(),
             name,
             color: `#${Math.floor(Math.random() * 16777215).toString(16)}`
         }
-        saveTeams([...teams, newTeam])
+        await setDoc(doc(db, "strategic_teams", newTeam.id), newTeam);
     }
 
-    const handleTeamDelete = (id: string) => {
-        saveTeams(teams.filter(t => t.id !== id))
+    const handleTeamDelete = async (id: string) => {
+        await deleteDoc(doc(db, "strategic_teams", id));
     }
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (!confirm("Excluir este objetivo estratégico?")) return
-        const updated = objectives.filter(o => o.id !== id)
-        saveObjectives(updated)
+        await deleteDoc(doc(db, "strategic_objectives", id));
     }
 
     return (

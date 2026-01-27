@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Plus, Trash2, Printer, ChevronDown, ChevronRight, Target, BarChart3, Pencil } from "lucide-react"
+import { db } from "@/lib/firebase"
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
 
 interface KeyResult {
     id: string
@@ -35,39 +37,27 @@ export function ManualOkrs() {
     const [filterQuarter, setFilterQuarter] = useState<string>("ALL")
 
     useEffect(() => {
-        const saved = localStorage.getItem("manual_objectives_v2")
-        if (saved) {
-            setObjectives(JSON.parse(saved))
-        } else {
-            // Migration from old flat format if exists
-            const old = localStorage.getItem("manual_okrs")
-            if (old) {
-                const oldData = JSON.parse(old)
-                const migrated = oldData.map((o: any) => ({
-                    id: o.id,
-                    name: o.name,
-                    year: 2025,
-                    quarter: "Q1",
-                    krs: [{
-                        id: Date.now().toString() + Math.random(),
-                        name: "Key Result Inicial",
-                        responsible: o.responsible,
-                        progress: o.progress,
-                        notes: o.notes
-                    }]
-                }))
-                setObjectives(migrated)
-                localStorage.setItem("manual_objectives_v2", JSON.stringify(migrated))
-            }
-        }
+        const q = query(collection(db, "manual_okrs"));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const items: ManualObjective[] = [];
+            querySnapshot.forEach((doc) => {
+                items.push({ ...doc.data() as ManualObjective, id: doc.id });
+            });
+            setObjectives(items);
+        });
+
+        return () => unsubscribe();
     }, [])
 
-    const saveObjectives = (items: ManualObjective[]) => {
-        setObjectives(items)
-        localStorage.setItem("manual_objectives_v2", JSON.stringify(items))
+    const saveObjectiveToFirestore = async (obj: ManualObjective) => {
+        try {
+            await setDoc(doc(db, "manual_okrs", obj.id), obj);
+        } catch (e) {
+            console.error("Error saving manual objective:", e);
+        }
     }
 
-    const handleAddObjective = () => {
+    const handleAddObjective = async () => {
         if (!newName) return
         const newItem: ManualObjective = {
             id: Date.now().toString(),
@@ -76,61 +66,55 @@ export function ManualOkrs() {
             quarter: newQuarter,
             krs: []
         }
-        const updated = [newItem, ...objectives]
-        saveObjectives(updated)
+        await saveObjectiveToFirestore(newItem);
         setNewName("")
         setExpandedIds(prev => new Set(prev).add(newItem.id))
     }
 
-    const handleDeleteObjective = (id: string) => {
+    const handleDeleteObjective = async (id: string) => {
         if (!confirm("Excluir este objetivo e todos os seus KRs?")) return
-        const updated = objectives.filter(o => o.id !== id)
-        saveObjectives(updated)
+        await deleteDoc(doc(db, "manual_okrs", id));
     }
 
-    const handleAddKR = (objId: string) => {
-        const updated = objectives.map(obj => {
-            if (obj.id === objId) {
-                const newKR: KeyResult = {
-                    id: Date.now().toString(),
-                    name: "Novo Key Result",
-                    responsible: "",
-                    progress: 0,
-                    notes: ""
-                }
-                return { ...obj, krs: [...obj.krs, newKR] }
-            }
-            return obj
-        })
-        saveObjectives(updated)
+    const handleAddKR = async (objId: string) => {
+        const obj = objectives.find(o => o.id === objId);
+        if (obj) {
+            const newKR: KeyResult = {
+                id: Date.now().toString(),
+                name: "Novo Key Result",
+                responsible: "",
+                progress: 0,
+                notes: ""
+            };
+            const updatedObj = { ...obj, krs: [...obj.krs, newKR] };
+            await saveObjectiveToFirestore(updatedObj);
+        }
     }
 
-    const handleDeleteKR = (objId: string, krId: string) => {
-        const updated = objectives.map(obj => {
-            if (obj.id === objId) {
-                return { ...obj, krs: obj.krs.filter(kr => kr.id !== krId) }
-            }
-            return obj
-        })
-        saveObjectives(updated)
+    const handleDeleteKR = async (objId: string, krId: string) => {
+        const obj = objectives.find(o => o.id === objId);
+        if (obj) {
+            const updatedObj = { ...obj, krs: obj.krs.filter(kr => kr.id !== krId) };
+            await saveObjectiveToFirestore(updatedObj);
+        }
     }
 
-    const handleUpdateKR = (objId: string, krId: string, field: keyof KeyResult, value: any) => {
-        const updated = objectives.map(obj => {
-            if (obj.id === objId) {
-                const updatedKRs = obj.krs.map(kr =>
-                    kr.id === krId ? { ...kr, [field]: value } : kr
-                )
-                return { ...obj, krs: updatedKRs }
-            }
-            return obj
-        })
-        saveObjectives(updated)
+    const handleUpdateKR = async (objId: string, krId: string, field: keyof KeyResult, value: any) => {
+        const obj = objectives.find(o => o.id === objId);
+        if (obj) {
+            const updatedKRs = obj.krs.map(kr =>
+                kr.id === krId ? { ...kr, [field]: value } : kr
+            );
+            const updatedObj = { ...obj, krs: updatedKRs };
+            await saveObjectiveToFirestore(updatedObj);
+        }
     }
 
-    const handleUpdateObjName = (id: string, name: string) => {
-        const updated = objectives.map(obj => obj.id === id ? { ...obj, name } : obj)
-        saveObjectives(updated)
+    const handleUpdateObjName = async (id: string, name: string) => {
+        const obj = objectives.find(o => o.id === id);
+        if (obj) {
+            await saveObjectiveToFirestore({ ...obj, name });
+        }
     }
 
     const startEditingObj = (e: React.MouseEvent, obj: ManualObjective) => {
