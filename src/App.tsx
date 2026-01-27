@@ -8,6 +8,7 @@ import { EpicAnalysis } from "@/pages/EpicAnalysis"
 import { OkrAssessment } from "@/pages/OkrAssessment"
 import { StrategicObjectives } from "@/pages/StrategicObjectives"
 import { ManualOkrs } from "@/pages/ManualOkrs"
+import { ExtraEpicAnalysis } from "@/pages/ExtraEpicAnalysis"
 import { DebugOverlay } from "@/components/DebugOverlay"
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
             <Route path="/assessment" element={<OkrAssessment />} />
             <Route path="/strategic-objectives" element={<StrategicObjectives />} />
             <Route path="/manual-okrs" element={<ManualOkrs />} />
+            <Route path="/extra-analysis" element={<ExtraEpicAnalysis />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>

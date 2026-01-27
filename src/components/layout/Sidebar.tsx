@@ -1,4 +1,4 @@
-import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3 } from "lucide-react"
+import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Link, useLocation } from "react-router-dom"
 
@@ -50,6 +50,15 @@ export function Sidebar({ className }: SidebarProps) {
                             )}>
                                 <BarChart3 className="mr-2 h-4 w-4" />
                                 Epic Analysis
+                            </button>
+                        </Link>
+                        <Link to="/extra-analysis">
+                            <button className={cn(
+                                "w-full flex items-center rounded-md px-4 py-2 font-medium transition-colors hover:bg-secondary/50 text-left",
+                                pathname === "/extra-analysis" ? "bg-secondary" : "border-transparent"
+                            )}>
+                                <Layers className="mr-2 h-4 w-4" />
+                                Extra Initiatives
                             </button>
                         </Link>
                         <Link to="/assessment">

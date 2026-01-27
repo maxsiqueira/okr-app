@@ -6,8 +6,23 @@ import { JiraIssue } from "@/types/jira"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+
+// Custom 3D-like Cylinder shape
+const CylinderBar = (props: any) => {
+    const { fill, x, y, width, height } = props;
+    if (height === 0 || !height) return null;
+    const radiusX = width / 2;
+    const radiusY = 5;
+    return (
+        <g>
+            <ellipse cx={x + radiusX} cy={y + height} rx={radiusX} ry={radiusY} fill={fill} filter="brightness(0.7)" />
+            <rect x={x} y={y} width={width} height={height} fill={fill} />
+            <ellipse cx={x + radiusX} cy={y} rx={radiusX} ry={radiusY} fill={fill} filter="brightness(1.2)" />
+        </g>
+    );
+};
 
 export function EpicAnalysis() {
     const [searchParams, setSearchParams] = useSearchParams()
@@ -454,8 +469,8 @@ export function EpicAnalysis() {
             </div>
 
             <Card>
-                <CardHeader><CardTitle>Tarefas Concluídas por Trimestre ({displayYear})</CardTitle></CardHeader>
-                <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={quarterlyData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="quarter" /><YAxis allowDecimals={false} /><Tooltip cursor={{ fill: 'transparent' }} /><Bar dataKey="count" radius={[4, 4, 0, 0]}>{quarterlyData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></CardContent>
+                <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" /> Tarefas Concluídas por Trimestre ({displayYear})</CardTitle></CardHeader>
+                <CardContent><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={quarterlyData} margin={{ top: 20 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="quarter" /><YAxis allowDecimals={false} /><Tooltip cursor={{ fill: 'transparent' }} /><Bar dataKey="count" shape={<CylinderBar />} barSize={40}>{quarterlyData.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div></CardContent>
             </Card>
 
             <Card>
