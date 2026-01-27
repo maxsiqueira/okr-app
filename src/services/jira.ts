@@ -45,11 +45,13 @@ const MOCK_EPICS: JiraIssue[] = [
 // Helper for Proxy Fetching
 const fetchWithProxy = async (targetUrl: string, method: string = 'GET', headers: any = {}, body: any = null) => {
     const start = performance.now();
+    const proxyEndpoint = localStorage.getItem("proxy_url") || "/api/proxy";
     try {
-        const response = await fetch('/api/proxy', {
+        const response = await fetch(proxyEndpoint, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'bypass-tunnel-reminder': 'true'
             },
             body: JSON.stringify({
                 url: targetUrl,
@@ -60,20 +62,42 @@ const fetchWithProxy = async (targetUrl: string, method: string = 'GET', headers
         });
         const duration = Math.round(performance.now() - start);
 
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[JiraService] Proxy response not OK: ${response.status} ${response.statusText}`, errorText);
+
+            if (localStorage.getItem("debug_mode") === "true") {
+                addDebugLog({
+                    type: 'API_ERROR',
+                    message: `${method} ${targetUrl.split('/rest/api/3/')[1] || targetUrl}`,
+                    jql: body?.jql,
+                    duration
+                });
+            }
+            throw new Error(`Proxy error: ${response.status} ${errorText}`);
+        }
+
+        const contentType = response.headers.get("content-type");
+        if (contentType && !contentType.includes("application/json")) {
+            if (localStorage.getItem("debug_mode") === "true") {
+                addDebugLog({
+                    type: 'API_ERROR',
+                    message: `FAILED: Redirected to HTML instead of JSON. Proxy is down.`,
+                    duration
+                });
+            }
+            throw new Error("Proxy Backend Indisponível (Recebido HTML do Firebase Redirect em vez de JSON do Jira)");
+        }
+
         if (localStorage.getItem("debug_mode") === "true") {
             addDebugLog({
-                type: response.ok ? 'API_SUCCESS' : 'API_ERROR',
+                type: 'API_SUCCESS',
                 message: `${method} ${targetUrl.split('/rest/api/3/')[1] || targetUrl}`,
                 jql: body?.jql,
                 duration
             });
         }
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[JiraService] Proxy response not OK: ${response.status} ${response.statusText}`, errorText);
-            throw new Error(`Proxy error: ${response.status} ${errorText}`);
-        }
         return response;
     } catch (error) {
         console.error("[JiraService] ❌ Proxy fetch failed details:", error);
@@ -653,12 +677,15 @@ export const JiraService = {
 
         if (!url || !email || !token) throw new Error("Missing credentials")
 
+        // NORMALIZE JIRA URL
         let targetUrl = url.trim();
         if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
+        targetUrl = targetUrl.replace(/\/+$/, ""); // Remove all trailing slashes
+
         const cleanedEmail = email.trim();
         const cleanedToken = token.trim();
 
-        console.log(`[JiraService] 🔐 Credential Check: Email len=${cleanedEmail.length}, Token len=${cleanedToken.length}`);
+        console.log(`[JiraService] 🔐 Sync Attempt: URL=${targetUrl}, Email=${cleanedEmail}`);
 
         if (cleanedToken.length > 50) {
             console.warn("[JiraService] ⚠️ WARNING: Token is suspiciously long (>50 chars). Standard Jira API tokens are usually ~24 chars.");

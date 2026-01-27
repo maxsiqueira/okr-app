@@ -29,16 +29,34 @@ function log(type, message, details = null) {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'bypass-tunnel-reminder']
+}));
 app.use(bodyParser.json());
 
-// 0) System Logs Endpoint
+app.use((req, res, next) => {
+    log('INFO', `Method: ${req.method} | Path: ${req.path}`);
+    next();
+});
+
+// 0) System Logs & Health Check
 app.get('/api/logs', (req, res) => {
     res.json(LOGS);
 });
 
+app.get('/health', (req, res) => {
+    log('INFO', 'Health Check received from Cloud/Tunnel');
+    res.json({ status: 'active', node: process.version, time: new Date().toISOString() });
+});
+
+app.get('/', (req, res) => {
+    res.send('<h1>Ion Proxy is Running</h1><p>Send POST requests to this URL to bridge to Jira.</p>');
+});
+
 // 1) API/Proxy Routes
-app.post('/api/proxy', async (req, res) => {
+const proxyHandler = async (req, res) => {
     try {
         const { url, method, headers, body } = req.body;
 
@@ -47,32 +65,35 @@ app.post('/api/proxy', async (req, res) => {
             return res.status(400).json({ error: 'Missing target URL' });
         }
 
-        log('INFO', `Proxy Request: ${method || 'GET'} -> ${url}`);
+        const targetAction = `${method || 'GET'} ${url.split('/rest/api/')[1] || url}`;
 
-        // Log Headers (Masked)
-        if (headers && headers.Authorization) {
-            log('INFO', `Auth Header Present (Masked len: ${headers.Authorization.length})`);
-        }
+        // NORMALIZE TARGET URL (Prevent Double Slashes)
+        const finalUrl = url.replace(/([^:]\/)\/+/g, "$1");
+
+        log('INFO', `Connecting to Jira: ${finalUrl}`);
 
         const fetchOptions = {
             method: method || 'GET',
-            headers: headers || {},
-            body: body ? JSON.stringify(body) : undefined,
+            headers: {
+                ...headers,
+                'User-Agent': 'Ion-Dashboard-Proxy/1.0',
+                'Connection': 'keep-alive'
+            },
+            body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
         };
 
-        const response = await fetch(url, fetchOptions);
-
-        const statusType = response.ok ? 'SUCCESS' : 'ERROR';
-        log(statusType, `Upstream Response: ${response.status} ${response.statusText}`);
-
-        res.status(response.status);
-
+        const response = await fetch(finalUrl, fetchOptions);
         const data = await response.text();
 
-        // Log Error Responses Details
-        if (!response.ok) {
-            log('ERROR', `Upstream Error Body Preview`, data.substring(0, 500));
+        if (response.ok) {
+            log('SUCCESS', `Jira Answered 200 OK for ${targetAction}`);
+        } else {
+            log('ERROR', `Jira Error ${response.status}: ${data.substring(0, 200)}`);
         }
+
+        res.status(response.status);
+        const contentType = response.headers.get("content-type");
+        if (contentType) res.setHeader("Content-Type", contentType);
 
         try {
             const json = JSON.parse(data);
@@ -84,7 +105,10 @@ app.post('/api/proxy', async (req, res) => {
         log('ERROR', 'Critical Proxy Exception', error.message);
         res.status(500).json({ error: error.message });
     }
-});
+};
+
+app.post('/api/proxy', proxyHandler);
+app.post('/', proxyHandler); // Aceita também na raiz para túneis (Ngrok/Cloudflare)
 
 // 2) Static File Serving (for production)
 const __filename = fileURLToPath(import.meta.url);
