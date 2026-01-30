@@ -67,7 +67,79 @@ export const AiService = {
         } catch (e) {
             console.error("Erro ao salvar no banco:", e);
         }
+    },
+
+    /**
+     * Sugere OKRs (Objetivos e Key Results) baseado em um contexto macro fornecido.
+     * Retorna um JSON estruturado com sugestões que podem ser aprovadas pelo usuário.
+     */
+    suggestOkrs: async (macroContext: string, year: number, quarter: string): Promise<SuggestedOkr[]> => {
+        try {
+            const rawKey = localStorage.getItem("gemini_api_key")
+            const apiKey = rawKey?.trim()
+
+            if (!apiKey) {
+                throw new Error("Chave Gemini não configurada. Acesse as Configurações para adicionar sua API Key.");
+            }
+
+            const prompt = `Você é um especialista em OKRs (Objectives and Key Results).
+Com base no seguinte contexto estratégico, gere sugestões de OKRs estruturados.
+
+CONTEXTO: ${macroContext}
+ANO: ${year}
+PERÍODO: ${quarter}
+
+IMPORTANTE: Responda APENAS com um JSON válido no seguinte formato, sem nenhum texto adicional:
+{
+  "suggestions": [
+    {
+      "objectiveName": "Nome do Objetivo estratégico",
+      "keyResults": [
+        {
+          "name": "Nome do Key Result mensurável",
+          "responsible": "",
+          "notes": "Descrição ou métrica sugerida"
+        }
+      ]
     }
+  ]
+}
+
+REGRAS:
+1. Gere de 2 a 4 objetivos estratégicos
+2. Cada objetivo deve ter de 2 a 4 Key Results mensuráveis
+3. Os KRs devem ser específicos, mensuráveis e alcançáveis
+4. Use linguagem em português do Brasil
+5. Mantenha o foco no contexto fornecido
+6. Retorne APENAS o JSON, sem explicações`;
+
+            const result = await callGemini(apiKey, prompt);
+
+            // Parse o JSON da resposta
+            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                throw new Error("Resposta da IA não contém JSON válido");
+            }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return parsed.suggestions || [];
+
+        } catch (error: any) {
+            console.error("OKR Suggestion Error:", error);
+            throw new Error(`Erro ao gerar sugestões: ${error.message}`);
+        }
+    }
+}
+
+export interface SuggestedKeyResult {
+    name: string;
+    responsible: string;
+    notes: string;
+}
+
+export interface SuggestedOkr {
+    objectiveName: string;
+    keyResults: SuggestedKeyResult[];
 }
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
