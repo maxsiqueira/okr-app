@@ -1,17 +1,30 @@
+import { useState, useEffect } from "react"
 import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { Badge } from "@/components/ui/badge"
+import { useTranslation } from "react-i18next"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
     onItemClick?: () => void
 }
 
 export function Sidebar({ className, onItemClick }: SidebarProps) {
+    const { t } = useTranslation()
     const location = useLocation()
     const pathname = location.pathname
     const { user } = useAuth()
+    const [customLogo, setCustomLogo] = useState<string | null>(localStorage.getItem("ion_custom_logo"))
+
+    useEffect(() => {
+        const handleLogoChange = () => {
+            setCustomLogo(localStorage.getItem("ion_custom_logo"))
+        }
+
+        window.addEventListener('ion-logo-change', handleLogoChange)
+        return () => window.removeEventListener('ion-logo-change', handleLogoChange)
+    }, [])
 
     const canAccess = (panelId: string) => {
         if (!user) return false;
@@ -59,43 +72,68 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
 
     if (!user) return null;
 
+    const LogoContent = () => {
+        if (customLogo) {
+            return (
+                <div className="flex items-center gap-3">
+                    <img
+                        src={customLogo}
+                        alt="Logo"
+                        className="h-10 w-auto max-w-[140px] object-contain rounded-lg shadow-realestate"
+                        onError={(e) => {
+                            // If base64/URL fails, fallback to ion default
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            setCustomLogo(null);
+                        }}
+                    />
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center gap-3 font-inter">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-realestate-primary-500 shadow-realestate">
+                    <Home className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-base font-bold text-white tracking-tight">Ion Dashboard</span>
+                    <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Strategic OKR</span>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className={cn("pb-12 h-full bg-gradient-sidebar", className)}>
             {/* Logo Section */}
-            <div className="px-6 py-6 border-b border-white/10">
-                <Link to="/" className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-realestate-primary-500">
-                        <Home className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-base font-bold text-white">Ion Dashboard</span>
-                        <span className="text-xs text-slate-400">Strategic OKR</span>
-                    </div>
+            <div className="px-6 py-8 border-b border-white/5">
+                <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <LogoContent />
                 </Link>
             </div>
 
             <div className="space-y-4 py-4">
                 <div className="px-3 py-2">
                     <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        Dashboard
+                        {t('sidebar.dashboard', 'Dashboard')}
                     </h2>
                     <div className="space-y-1">
                         {canAccess('strategic') && (
                             <NavLink to="/strategic" active={pathname === "/strategic" || pathname === "/"}>
                                 <LayoutDashboard className="h-4 w-4" />
-                                <span>Strategic Overview</span>
+                                <span>{t('sidebar.strategic_overview', 'Strategic Overview')}</span>
                             </NavLink>
                         )}
                         {canAccess('strategic-objectives') && (
                             <NavLink to="/strategic-objectives" active={pathname === "/strategic-objectives"}>
                                 <Target className="h-4 w-4" />
-                                <span>Strategic Objectives</span>
+                                <span>{t('sidebar.strategic_objectives', 'Strategic Objectives')}</span>
                             </NavLink>
                         )}
                         {canAccess('okr') && (
                             <NavLink to="/okr" active={pathname === "/okr"}>
                                 <BarChart3 className="h-4 w-4" />
-                                <span>OKR Tracking</span>
+                                <span>{t('sidebar.okr_tracking', 'OKR Tracking')}</span>
                             </NavLink>
                         )}
                     </div>
@@ -104,7 +142,7 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                 {/* Analysis Section */}
                 <div className="px-3 py-2 border-t border-white/10 pt-4">
                     <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        Analysis
+                        {t('sidebar.analysis', 'Analysis')}
                     </h2>
                     <div className="space-y-1">
                         {canAccess('analysis') && (
@@ -114,19 +152,19 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                                 badge={{ text: "NEW", variant: "new" }}
                             >
                                 <BarChart3 className="h-4 w-4" />
-                                <span>Epic Analysis</span>
+                                <span>{t('sidebar.epic_analysis', 'Epic Analysis')}</span>
                             </NavLink>
                         )}
                         {canAccess('extra-analysis') && (
                             <NavLink to="/extra-analysis" active={pathname === "/extra-analysis"}>
                                 <Layers className="h-4 w-4" />
-                                <span>Extra Initiatives</span>
+                                <span>{t('sidebar.extra_initiatives', 'Extra Initiatives')}</span>
                             </NavLink>
                         )}
                         {canAccess('assessment') && (
                             <NavLink to="/assessment" active={pathname === "/assessment"}>
                                 <Percent className="h-4 w-4" />
-                                <span>Results Assessment</span>
+                                <span>{t('sidebar.results_assessment', 'Results Assessment')}</span>
                             </NavLink>
                         )}
                     </div>
@@ -135,19 +173,19 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                 {/* Management Section */}
                 <div className="px-3 py-2 border-t border-white/10 pt-4">
                     <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        Management
+                        {t('sidebar.management', 'Management')}
                     </h2>
                     <div className="space-y-1">
                         {canAccess('manual-okrs') && (
                             <NavLink to="/manual-okrs" active={pathname === "/manual-okrs"}>
                                 <Edit3 className="h-4 w-4" />
-                                <span>Manual OKRs</span>
+                                <span>{t('sidebar.manual_okrs', 'Manual OKRs')}</span>
                             </NavLink>
                         )}
                         {canAccess('settings') && (
                             <NavLink to="/settings" active={pathname === "/settings"}>
                                 <Settings className="h-4 w-4" />
-                                <span>Settings</span>
+                                <span>{t('sidebar.settings', 'Settings')}</span>
                             </NavLink>
                         )}
                     </div>

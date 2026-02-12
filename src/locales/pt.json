@@ -1,0 +1,54 @@
+{
+    "common": {
+        "loading": "Carregando...",
+        "save": "Salvar",
+        "cancel": "Cancelar",
+        "delete": "Excluir",
+        "edit": "Editar",
+        "search": "Pesquisar...",
+        "sync": "Sincronizar",
+        "all_versions": "Todas as Versões",
+        "project_key": "Chave do Projeto"
+    },
+    "sidebar": {
+        "dashboard": "Dashboard",
+        "strategic_overview": "Visão Estratégica",
+        "strategic_objectives": "Objetivos Estratégicos",
+        "okr_tracking": "Acompanhamento OKR",
+        "analysis": "Análise",
+        "epic_analysis": "Análise de Epics",
+        "extra_initiatives": "Iniciativas Extras",
+        "results_assessment": "Apuração de Resultados",
+        "management": "Gestão",
+        "manual_okrs": "OKRs Manuais",
+        "settings": "Configurações"
+    },
+    "objectives": {
+        "title": "Objetivos Estratégicos",
+        "subtitle": "Gestão à Vista e Monitoramento de Iniciativas",
+        "new_objective": "Novo Macro-Objetivo Estratégico",
+        "edit_objective": "Modificar Objetivo",
+        "objective_title": "Título do Objetivo (Macro)",
+        "teams_responsible": "Times Responsáveis",
+        "manage_teams": "GERENCIAR",
+        "linked_initiatives": "Iniciativas Vinc. & Esforço",
+        "impact_description": "Descrição do Impacto Estratégico",
+        "register": "Cadastrar no Board",
+        "tracking": "Acompanhamento de Objetivos",
+        "okr_cross_alert": "Considerar esforço - OKR Cross",
+        "zero_progress_alert": "Atenção: Progresso Zero",
+        "total_effort": "Esforço Total"
+    },
+    "dashboard": {
+        "title": "Visão Estratégica",
+        "performance_kpis": "KPIs de Performance",
+        "quarterly_completion": "Entregas por Trimestre",
+        "initiatives_overview": "Visão das Iniciativas",
+        "overall_progress": "Progresso Global",
+        "active_okrs": "OKRs Ativos",
+        "extra_initiatives": "Iniciativas Extras",
+        "responsible": "Responsável",
+        "not_assigned": "Não atribuído",
+        "no_epics": "Nenhum epic configurado."
+    }
+}

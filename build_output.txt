@@ -1,0 +1,11 @@
+
+> ion-dashboard@0.0.0 build
+> tsc -b && vite build
+
+src/pages/EpicAnalysis.tsx(9,101): error TS6133: 'Hourglass' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(9,112): error TS6133: 'Rocket' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(9,120): error TS6133: 'AlertTriangle' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(410,11): error TS6133: 'subDone' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(411,11): error TS6133: 'subInProgress' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(412,11): error TS6133: 'subToDo' is declared but its value is never read.
+src/pages/EpicAnalysis.tsx(414,11): error TS6133: 'cancelledCount' is declared but its value is never read.

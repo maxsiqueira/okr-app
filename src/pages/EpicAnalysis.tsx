@@ -6,7 +6,7 @@ import { JiraIssue } from "@/types/jira"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, Hourglass, Rocket, AlertTriangle, ListTodo } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo } from "lucide-react"
 import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
@@ -390,7 +390,6 @@ export function EpicAnalysis() {
 
     // Correct categorization using subtask field
     const majorIssuesFiltered = activeIssuesFiltered.filter(i => !i.fields.issuetype.subtask)
-    const subtaskIssuesOnlyFiltered = activeIssuesFiltered.filter(i => i.fields.issuetype.subtask)
 
     // 1. Overall Epic Progress (Jira Logic: Major Done / Total Major)
     // "Total Major" includes ALL statuses (To Do, In Progress, Done, Cancelled)
@@ -407,11 +406,7 @@ export function EpicAnalysis() {
     const majorCancelled = allFilteredIssues.filter(i => i.fields.status.name.toLowerCase().includes("cancel") && !i.fields.issuetype.subtask).length
 
     // SUBTASK METRICS (Secondary details)
-    const subDone = subtaskIssuesOnlyFiltered.filter(i => i.fields.status.statusCategory.key === "done").length
-    const subInProgress = subtaskIssuesOnlyFiltered.filter(i => i.fields.status.statusCategory.key === "indeterminate").length
-    const subToDo = subtaskIssuesOnlyFiltered.filter(i => i.fields.status.statusCategory.key === "new").length
-
-    const cancelledCount = majorCancelled
+    // subDone, subInProgress, subToDo removed as they were not used in UI
 
     // GLOBAL Counters (Independent of Filter)
     const globalStoryCount = children.filter(c =>

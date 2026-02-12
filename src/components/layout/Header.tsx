@@ -1,4 +1,5 @@
-import { Moon, Sun, Menu, LogOut, Search, Bell, Maximize } from "lucide-react"
+import { Moon, Sun, Menu, LogOut, Search, Bell, Maximize, Languages } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -14,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { auth } from "@/lib/firebase"
 import { signOut } from "firebase/auth"
 import { useNavigate } from "react-router-dom"
+import { cn } from "@/lib/utils"
 
 interface HeaderProps {
     onToggleSidebar?: () => void
@@ -22,17 +24,18 @@ interface HeaderProps {
 export function Header({ onToggleSidebar }: HeaderProps) {
     const { theme, setTheme } = useTheme()
     const { user } = useAuth()
+    const { i18n, t } = useTranslation()
     const navigate = useNavigate()
 
     const handleLogout = async () => {
-        if (!window.confirm("Tem certeza que deseja sair?")) return
+        if (!window.confirm(t('header.logout_confirm', "Tem certeza que deseja sair?"))) return
 
         try {
             await signOut(auth)
             navigate("/login")
         } catch (error) {
             console.error("Erro ao fazer logout:", error)
-            alert("Erro ao fazer logout. Tente novamente.")
+            alert(t('header.logout_error', "Erro ao fazer logout. Tente novamente."))
         }
     }
 
@@ -63,7 +66,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                         <div className="relative w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                             <Input
-                                placeholder="Search..."
+                                placeholder={t('common.search', "Search...")}
                                 className="pl-10 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                             />
                         </div>
@@ -104,6 +107,34 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                             <Bell className="h-4 w-4" />
                             <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-realestate-primary-500 rounded-full" />
                         </Button>
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-9 gap-2 px-3 text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    <Languages className="h-4 w-4" />
+                                    <span className="text-[10px] uppercase tracking-wider">{i18n.language.split('-')[0]}</span>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40 p-1">
+                                <DropdownMenuLabel className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2 py-1.5">Idioma / Language</DropdownMenuLabel>
+                                <DropdownMenuItem
+                                    onClick={() => i18n.changeLanguage('pt')}
+                                    className={cn("flex items-center gap-2 cursor-pointer p-2 rounded-lg text-xs font-bold", i18n.language.startsWith('pt') ? "bg-slate-100" : "")}
+                                >
+                                    <span className="text-base">🇧🇷</span> Português (BR)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => i18n.changeLanguage('en')}
+                                    className={cn("flex items-center gap-2 cursor-pointer p-2 rounded-lg text-xs font-bold", i18n.language.startsWith('en') ? "bg-slate-100" : "")}
+                                >
+                                    <span className="text-base">🇺🇸</span> English (US)
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
 
                     {/* Mobile Theme Toggle */}
@@ -134,7 +165,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                             <DropdownMenuContent align="end" className="w-56">
                                 <DropdownMenuLabel className="font-normal">
                                     <div className="flex flex-col space-y-1">
-                                        <p className="text-sm font-medium leading-none">{user.displayName || "Usuário"}</p>
+                                        <p className="text-sm font-medium leading-none">{user.displayName || t('common.user', "Usuário")}</p>
                                         <p className="text-xs leading-none text-muted-foreground">
                                             {user.email}
                                         </p>
@@ -151,7 +182,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400 cursor-pointer">
                                     <LogOut className="mr-2 h-4 w-4" />
-                                    <span>Sair</span>
+                                    <span>{t('header.logout', "Sair")}</span>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>

@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from "react"
+import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, Sparkles } from "lucide-react"
+import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, Sparkles, ExternalLink, ListTodo, TrendingUp, Zap, AlertTriangle, Users } from "lucide-react"
+import { StatCard } from "@/components/ui/stat-card"
+import { Badge } from "@/components/ui/badge"
 import { JiraService } from "@/services/jira"
 import { AiService } from "@/services/ai"
+import { useTranslation } from "react-i18next"
 import { db } from "@/lib/firebase"
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
 
@@ -15,7 +19,8 @@ export interface StrategicObjective {
     title: string
     description: string
     epicKeys: string[] // List of epic keys associated with this objective
-    teamId?: string
+    teamIds?: string[] // Multiple teams
+    teamId?: string // Legacy single team support
 }
 
 export interface Team {
@@ -38,6 +43,7 @@ const DEFAULT_TEAMS: Team[] = [
 ]
 
 export function StrategicObjectives() {
+    const { t } = useTranslation()
     const [objectives, setObjectives] = useState<StrategicObjective[]>([])
     const [epicData, setEpicData] = useState<Record<string, { progress: number, hours: number, summary?: string, status?: string }>>({})
     const [rawJiraEpics, setRawJiraEpics] = useState<any[]>([])
@@ -45,7 +51,7 @@ export function StrategicObjectives() {
     const [newTitle, setNewTitle] = useState("")
     const [newDesc, setNewDesc] = useState("")
     const [newEpics, setNewEpics] = useState("")
-    const [newTeamId, setNewTeamId] = useState("")
+    const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
     const [editingId, setEditingId] = useState<string | null>(null)
     const [teams, setTeams] = useState<Team[]>([])
     const [showTeamManager, setShowTeamManager] = useState(false)
@@ -126,7 +132,7 @@ export function StrategicObjectives() {
                 title: newTitle,
                 description: newDesc,
                 epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
-                teamId: newTeamId
+                teamIds: selectedTeamIds
             };
             await saveObjectiveToFirestore(updated);
             setEditingId(null)
@@ -136,14 +142,14 @@ export function StrategicObjectives() {
                 title: newTitle,
                 description: newDesc,
                 epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
-                teamId: newTeamId
+                teamIds: selectedTeamIds
             }
             await saveObjectiveToFirestore(newItem);
         }
         setNewTitle("")
         setNewDesc("")
         setNewEpics("")
-        setNewTeamId("")
+        setSelectedTeamIds([])
     }
 
     const startEditing = (obj: StrategicObjective) => {
@@ -151,7 +157,8 @@ export function StrategicObjectives() {
         setNewTitle(obj.title)
         setNewDesc(obj.description)
         setNewEpics(obj.epicKeys.join(", "))
-        setNewTeamId(obj.teamId || "")
+        // Handle migration from legacy teamId to teamIds
+        setSelectedTeamIds(obj.teamIds || (obj.teamId ? [obj.teamId] : []))
         window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
@@ -160,7 +167,7 @@ export function StrategicObjectives() {
         setNewTitle("")
         setNewDesc("")
         setNewEpics("")
-        setNewTeamId("")
+        setSelectedTeamIds([])
     }
 
     const handleTeamAdd = async (name: string) => {
@@ -182,24 +189,58 @@ export function StrategicObjectives() {
         await deleteDoc(doc(db, "strategic_objectives", id));
     }
 
+    // Consolidate metrics
+    const totalMetas = objectives.length
+    const avgProgress = objectives.length > 0
+        ? Math.round(objectives.reduce((acc, obj) => {
+            const progSum = obj.epicKeys.reduce((eAcc, eKey) => eAcc + (epicData[eKey]?.progress || 0), 0)
+            return acc + (obj.epicKeys.length > 0 ? (progSum / obj.epicKeys.length) : 0)
+        }, 0) / objectives.length)
+        : 0
+
+    const openJira = (key: string) => {
+        const baseUrl = localStorage.getItem("jira_url") || "";
+        let url = baseUrl.trim();
+        if (url && !url.startsWith('http')) url = `https://${url}`;
+        url = url.replace(/\/$/, "");
+        if (url) window.open(`${url}/browse/${key}`, '_blank')
+    }
+
     return (
-        <div className="space-y-6 p-4">
-            <div className="flex justify-between items-center">
+        <div className="space-y-6 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                        <Target className="h-6 w-6 text-primary" />
+                    <div className="p-3 bg-realestate-primary-500 rounded-2xl shadow-realestate-lg transform -rotate-3">
+                        <Target className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Objetivos Estratégicos - Gestão a Vista</h2>
-                        <p className="text-muted-foreground">
-                            Monitoramento em tempo real do atingimento de metas cruzando Epics/Tasks do Jira.
-                        </p>
+                        <h2 className="text-3xl font-black tracking-tight text-slate-800 dark:text-white uppercase">{t('objectives.title', 'Objetivos Estratégicos')}</h2>
+                        <p className="text-slate-400 font-medium">{t('objectives.subtitle', 'Gestão à Vista e Monitoramento de Iniciativas')}</p>
                     </div>
                 </div>
-                <Button variant="outline" onClick={() => fetchEpicProgress(objectives)} disabled={loading} className="gap-2">
+                <Button variant="outline" onClick={() => fetchEpicProgress(objectives)} disabled={loading} className="gap-2 font-bold uppercase tracking-wider text-xs border-slate-200 shadow-sm hover:bg-slate-50">
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                     Sincronizar Jira
                 </Button>
+            </div>
+
+            {/* KPI Board */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <StatCard
+                    title="Quantidade de Metas"
+                    value={totalMetas}
+                    icon={ListTodo}
+                    gradient="blue"
+                    className="h-32"
+                />
+                <StatCard
+                    title="Percentual Apurado (Consolidado)"
+                    value={`${avgProgress}%`}
+                    icon={Zap}
+                    gradient="purple"
+                    trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
+                    className="h-32"
+                />
             </div>
 
             {/* AI Analyst Integration */}
@@ -209,11 +250,11 @@ export function StrategicObjectives() {
                 manualOkrs={[]} // On this page we focus on Strategic
             />
 
-            <Card className={editingId ? "border-amber-200 bg-amber-50/30" : "border-primary/20 bg-primary/5"}>
-                <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <Plus className="h-4 w-4" />}
-                        {editingId ? "Editando Objetivo" : "Novo Macro-Objetivo"}
+            <Card className={editingId ? "border-amber-200 bg-amber-50/30 shadow-lg" : "border-none bg-white dark:bg-slate-900 shadow-realestate overflow-hidden"}>
+                <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0 border-b border-slate-50 dark:border-slate-800 mb-4">
+                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <TrendingUp className="h-4 w-4 text-realestate-primary-500" />}
+                        {editingId ? "Modificar Objetivo" : "Novo Macro-Objetivo Estratégico"}
                     </CardTitle>
                     {editingId && (
                         <Button variant="ghost" size="sm" onClick={cancelEditing} className="text-xs h-7 gap-1 uppercase font-bold text-amber-600 hover:text-amber-700 hover:bg-amber-100">
@@ -232,31 +273,49 @@ export function StrategicObjectives() {
                                 className="bg-white"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold">Time Responsável</label>
-                            <div className="flex gap-2">
-                                <select
-                                    value={newTeamId}
-                                    onChange={(e) => setNewTeamId(e.target.value)}
-                                    className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                >
-                                    <option value="">Selecione um Time</option>
-                                    {teams.map(t => (
-                                        <option key={t.id} value={t.id}>{t.name}</option>
-                                    ))}
-                                </select>
-                                <Button variant="outline" size="sm" onClick={() => setShowTeamManager(true)} type="button">
-                                    <Plus className="h-4 w-4" />
+                        <div className="md:col-span-2 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold uppercase text-slate-400">Times Responsáveis</label>
+                                <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(true)} type="button" className="h-5 px-1 text-realestate-primary-500 hover:bg-realestate-primary-50">
+                                    <Plus className="h-3 w-3" /> <span className="text-[10px] ml-1 font-black">GERENCIAR</span>
                                 </Button>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 p-3 min-h-[42px] rounded-xl border border-slate-100 bg-slate-50/50">
+                                {teams.map(t => {
+                                    const isSelected = selectedTeamIds.includes(t.id);
+                                    return (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedTeamIds(prev =>
+                                                    prev.includes(t.id)
+                                                        ? prev.filter(id => id !== t.id)
+                                                        : [...prev, t.id]
+                                                )
+                                            }}
+                                            className={cn(
+                                                "px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border",
+                                                isSelected
+                                                    ? "text-white shadow-md scale-105"
+                                                    : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                            )}
+                                            style={isSelected ? { backgroundColor: t.color, borderColor: t.color } : {}}
+                                        >
+                                            {t.name.toUpperCase()}
+                                        </button>
+                                    )
+                                })}
+                                {teams.length === 0 && <span className="text-[10px] text-slate-400 italic">Nenhum time cadastrado</span>}
                             </div>
                         </div>
                         <div className="space-y-2">
-                            <label className="text-xs font-bold">Iniciativas Vinc. (Epics ou Tasks)</label>
+                            <label className="text-xs font-bold uppercase text-slate-400 tracking-tight">Iniciativas Vinc. <span className="text-[10px] text-slate-300 ml-1">(Separe por vírgula)</span></label>
                             <Input
                                 value={newEpics}
                                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEpics(e.target.value)}
-                                placeholder="Ex: DEVOPS-633, DEVOPS-970"
-                                className="bg-white"
+                                placeholder="DEVOPS-633, DEVOPS-970, ..."
+                                className="bg-white rounded-xl border-slate-200"
                             />
                         </div>
                     </div>
@@ -269,114 +328,152 @@ export function StrategicObjectives() {
                             className="bg-white min-h-[80px]"
                         />
                     </div>
-                    <Button onClick={handleAdd} className={`w-full md:w-auto font-bold uppercase text-xs tracking-widest gap-2 ${editingId ? 'bg-amber-600 hover:bg-amber-700' : ''}`}>
+                    <Button onClick={handleAdd} className={`w-full md:w-auto font-black uppercase text-xs tracking-[0.2em] gap-2 py-6 px-8 rounded-xl shadow-realestate-lg transition-transform hover:scale-[1.02] active:scale-[0.98] ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gradient-realestate-blue'}`}>
                         {editingId ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                         {editingId ? "Salvar Alterações" : "Cadastrar no Board"}
                     </Button>
                 </CardContent>
             </Card>
 
-            <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <Table>
-                    <TableHeader className="bg-slate-50 dark:bg-slate-900 border-b">
-                        <TableRow>
-                            <TableHead className="w-[400px]">Objetivo Estratégico (Macro)</TableHead>
-                            <TableHead>Iniciativas & Horas Gastas</TableHead>
-                            <TableHead className="w-[180px] text-right">Progresso Consolidado</TableHead>
-                            <TableHead className="w-[80px] text-right">Ações</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {objectives.length === 0 ? (
+            <Card className="shadow-realestate border-none bg-white dark:bg-slate-900 overflow-hidden">
+                <CardHeader className="border-b border-slate-50 dark:border-slate-800">
+                    <CardTitle className="text-lg font-black flex items-center gap-2 text-slate-700 dark:text-slate-200 uppercase tracking-tight">
+                        <Target className="w-5 h-5 text-realestate-primary-500" /> Acompanhamento de Objetivos
+                    </CardTitle>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                             <TableRow>
-                                <TableCell colSpan={4} className="text-center py-20 text-muted-foreground italic">
-                                    Nenhum macro-objetivo configurado para exibição.
-                                </TableCell>
+                                <TableHead className="w-[400px] text-[10px] font-black uppercase tracking-widest py-4">Objetivo Estratégico (Macro)</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">Iniciativas Vinc. & Esforço</TableHead>
+                                <TableHead className="w-[180px] text-right text-[10px] font-black uppercase tracking-widest py-4">Progresso Consolidado</TableHead>
+                                <TableHead className="w-[100px] text-right text-[10px] font-black uppercase tracking-widest py-4">Ações</TableHead>
                             </TableRow>
-                        ) : (
-                            objectives.map(obj => {
-                                const progSum = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.progress || 0), 0)
-                                const totalProg = obj.epicKeys.length > 0 ? Math.round(progSum / obj.epicKeys.length) : 0
-                                const totalHours = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.hours || 0), 0)
+                        </TableHeader>
+                        <TableBody>
+                            {objectives.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="text-center py-20 text-muted-foreground italic">
+                                        Nenhum macro-objetivo configurado para exibição.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                objectives.map(obj => {
+                                    const progSum = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.progress || 0), 0)
+                                    const totalProg = obj.epicKeys.length > 0 ? Math.round(progSum / obj.epicKeys.length) : 0
+                                    const totalHours = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.hours || 0), 0)
 
-                                return (
-                                    <TableRow key={obj.id} className={`transition-colors border-slate-100 ${editingId === obj.id ? 'bg-amber-50/50 border-l-4 border-l-amber-500' : 'hover:bg-slate-50'}`}>
-                                        <TableCell className="py-6">
-                                            <div className="flex flex-col gap-1.5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-primary" />
-                                                    <span className="font-black text-slate-800 text-lg leading-tight">{obj.title}</span>
-                                                    {(() => {
-                                                        const team = teams.find(t => t.id === obj.teamId);
-                                                        if (!team) return null;
-                                                        return (
-                                                            <span
-                                                                className="text-[10px] font-bold px-2 py-0.5 rounded text-white ml-2"
-                                                                style={{ backgroundColor: team.color }}
-                                                            >
-                                                                {team.name.toUpperCase()}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </div>
-                                                <p className="text-xs text-muted-foreground leading-relaxed pl-4 border-l-2 border-slate-100 italic">
-                                                    {obj.description || "Sem descrição estratégica definida."}
-                                                </p>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-wrap gap-2">
-                                                {obj.epicKeys.length > 0 ? obj.epicKeys.map(k => (
-                                                    <div key={k} className="flex flex-col gap-0.5">
-                                                        <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
-                                                            <span className="text-[10px] font-black text-slate-700">{k}</span>
-                                                            <span className="text-[10px] font-bold text-blue-600 border-l pl-1.5 ml-1.5">{epicData[k]?.progress ?? '?'}%</span>
-                                                            <span className="text-[10px] font-medium text-slate-400 border-l pl-1.5 ml-1.5">{Math.round(epicData[k]?.hours || 0)}h</span>
+                                    return (
+                                        <TableRow key={obj.id} className={`transition-colors border-slate-100 ${editingId === obj.id ? 'bg-amber-50/50 border-l-4 border-l-amber-500' : 'hover:bg-slate-50'}`}>
+                                            <TableCell className="py-6">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <div className="w-2 h-2 rounded-full bg-realestate-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] flex-shrink-0" />
+                                                        <span className="font-black text-slate-800 dark:text-slate-100 text-lg leading-tight uppercase">{obj.title}</span>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {(() => {
+                                                                const teamIds = obj.teamIds || (obj.teamId ? [obj.teamId] : []);
+                                                                if (teamIds.length === 0) return null;
+
+                                                                return teamIds.map(tid => {
+                                                                    const team = teams.find(t => t.id === tid);
+                                                                    if (!team) return null;
+                                                                    return (
+                                                                        <Badge
+                                                                            key={tid}
+                                                                            className="text-[9px] font-black px-2 py-0.5 rounded-md text-white border-none shadow-sm"
+                                                                            style={{ backgroundColor: team.color }}
+                                                                        >
+                                                                            {team.name.toUpperCase()}
+                                                                        </Badge>
+                                                                    );
+                                                                });
+                                                            })()}
                                                         </div>
                                                     </div>
-                                                )) : (
-                                                    <span className="text-xs text-muted-foreground italic">Nenhuma iniciativa vinculada</span>
-                                                )}
-                                                {totalHours > 0 && (
-                                                    <div className="w-full mt-2">
-                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Esforço Total: <span className="text-slate-800">{totalHours.toFixed(1)} Horas</span></span>
+                                                    <p className="text-xs text-muted-foreground leading-relaxed pl-4 border-l-2 border-slate-100 italic">
+                                                        {obj.description || "Sem descrição estratégica definida."}
+                                                    </p>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {obj.epicKeys.length > 0 ? obj.epicKeys.map(k => (
+                                                        <div key={k} className="flex flex-col gap-0.5 group/epic">
+                                                            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm transition-all hover:border-realestate-primary-500/30">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[10px] font-black text-slate-400 group-hover/epic:text-realestate-primary-500 transition-colors uppercase">{k}</span>
+                                                                    <button
+                                                                        onClick={() => openJira(k)}
+                                                                        className="text-slate-300 hover:text-realestate-primary-500 transition-colors p-0.5"
+                                                                        title="Ver no Jira"
+                                                                    >
+                                                                        <ExternalLink size={10} />
+                                                                    </button>
+                                                                </div>
+                                                                <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 border-l border-slate-200 dark:border-slate-700 pl-2 ml-1">{epicData[k]?.progress ?? '?'}%</span>
+                                                                <span className="text-[10px] font-bold text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 ml-1">{Math.round(epicData[k]?.hours || 0)}h</span>
+                                                            </div>
+                                                        </div>
+                                                    )) : (
+                                                        <span className="text-xs text-slate-400 italic">Nenhuma iniciativa vinculada</span>
+                                                    )}
+                                                    {totalHours > 0 && (
+                                                        <div className="w-full mt-2">
+                                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                                                Esforço Total: <span className="text-slate-800 dark:text-slate-200 font-black px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700">{totalHours.toFixed(1)} Horas</span>
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right py-6">
+                                                <div className="flex flex-col items-end gap-2">
+                                                    {((obj.teamIds?.length || 0) > 1) && (
+                                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-100 dark:border-indigo-800 animate-pulse">
+                                                            <Users size={10} />
+                                                            <span className="text-[9px] font-black uppercase tracking-tighter">{t('objectives.okr_cross_alert', 'Considerar esforço - OKR Cross')}</span>
+                                                        </div>
+                                                    )}
+                                                    {totalProg === 0 && !((obj.teamIds?.length || 0) > 1) && (
+                                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-md border border-amber-100 dark:border-amber-800 animate-pulse">
+                                                            <AlertTriangle size={10} />
+                                                            <span className="text-[9px] font-black uppercase tracking-tighter">{t('objectives.zero_progress_alert', 'Atenção: Progresso Zero')}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        <BarChart3 className={`h-5 w-5 ${totalProg === 100 ? 'text-emerald-500' : 'text-primary'}`} />
+                                                        <span className={`text-2xl font-black tracking-tight ${totalProg === 100 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                                            {totalProg}%
+                                                        </span>
                                                     </div>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right py-6">
-                                            <div className="flex flex-col items-end gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <BarChart3 className={`h-5 w-5 ${totalProg === 100 ? 'text-emerald-500' : 'text-primary'}`} />
-                                                    <span className={`text-2xl font-black tracking-tight ${totalProg === 100 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                                                        {totalProg}%
-                                                    </span>
+                                                    <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                                                        <div
+                                                            className={`h-full transition-all duration-1000 ${totalProg === 100 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-primary'}`}
+                                                            style={{ width: `${totalProg}%` }}
+                                                        />
+                                                    </div>
                                                 </div>
-                                                <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-                                                    <div
-                                                        className={`h-full transition-all duration-1000 ${totalProg === 100 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-primary'}`}
-                                                        style={{ width: `${totalProg}%` }}
-                                                    />
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex items-center justify-end gap-1 px-2">
+                                                    <Button variant="ghost" size="sm" onClick={() => startEditing(obj)} className="text-slate-400 hover:text-realestate-primary-500 hover:bg-realestate-primary-50 transition-colors p-2 rounded-lg">
+                                                        <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" onClick={() => handleDelete(obj.id)} className="text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors p-2 rounded-lg">
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
                                                 </div>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <Button variant="ghost" size="sm" onClick={() => startEditing(obj)} className="text-slate-400 hover:text-primary hover:bg-primary/5 transition-colors">
-                                                    <Pencil className="h-4 w-4" />
-                                                </Button>
-                                                <Button variant="ghost" size="sm" onClick={() => handleDelete(obj.id)} className="text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors">
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        </TableCell>
-                                    </TableRow>
-                                )
-                            })
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </Card>
             {/* Team Management Modal */}
             {showTeamManager && (
                 <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">

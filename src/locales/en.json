@@ -1,0 +1,54 @@
+{
+    "common": {
+        "loading": "Loading...",
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "search": "Search...",
+        "sync": "Sync",
+        "all_versions": "All Versions",
+        "project_key": "Project Key"
+    },
+    "sidebar": {
+        "dashboard": "Dashboard",
+        "strategic_overview": "Strategic Overview",
+        "strategic_objectives": "Strategic Objectives",
+        "okr_tracking": "OKR Tracking",
+        "analysis": "Analysis",
+        "epic_analysis": "Epic Analysis",
+        "extra_initiatives": "Extra Initiatives",
+        "results_assessment": "Results Assessment",
+        "management": "Management",
+        "manual_okrs": "Manual OKRs",
+        "settings": "Settings"
+    },
+    "objectives": {
+        "title": "Strategic Objectives",
+        "subtitle": "Visual Management and Initiative Monitoring",
+        "new_objective": "New Strategic Objective",
+        "edit_objective": "Edit Objective",
+        "objective_title": "Objective Title (Macro)",
+        "teams_responsible": "Responsible Teams",
+        "manage_teams": "MANAGE",
+        "linked_initiatives": "Linked Initiatives",
+        "impact_description": "Strategic Impact Description",
+        "register": "Register on Board",
+        "tracking": "Objective Tracking",
+        "okr_cross_alert": "Consider Effort - OKR Cross",
+        "zero_progress_alert": "Attention: Zero Progress",
+        "total_effort": "Total Effort"
+    },
+    "dashboard": {
+        "title": "Strategic Overview",
+        "performance_kpis": "Performance KPIs",
+        "quarterly_completion": "Tasks Finished by Quarter",
+        "initiatives_overview": "Initiatives Overview",
+        "overall_progress": "Overall Progress",
+        "active_okrs": "Active OKRs",
+        "extra_initiatives": "Extra Initiatives",
+        "responsible": "Assignee",
+        "not_assigned": "Not assigned",
+        "no_epics": "No epics configured."
+    }
+}

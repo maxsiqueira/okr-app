@@ -128,8 +128,22 @@ export function SettingsPage() {
         localStorage.setItem("ion_auto_refresh_minutes", autoRefresh)
         localStorage.setItem("ion_custom_logo", logoUrlInput)
         window.dispatchEvent(new Event('ion-logo-change'))
-        alert("Configurações de Interface salvas! A página será atualizada.")
-        window.location.reload()
+        alert("Configurações de Interface salvas!")
+        // Removed window.location.reload() to allow the event to propagate instead
+    }
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        const reader = new FileReader()
+        reader.onloadend = () => {
+            const base64String = reader.result as string
+            setLogoUrlInput(base64String)
+            localStorage.setItem("ion_custom_logo", base64String)
+            window.dispatchEvent(new Event('ion-logo-change'))
+        }
+        reader.readAsDataURL(file)
     }
 
     const handleSync = async () => {
@@ -240,14 +254,34 @@ export function SettingsPage() {
                             </div>
                         </CardHeader>
                         <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-2">
-                                <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Logo URL (Imagem)</Label>
-                                <Input
-                                    placeholder="https://exemplo.com/logo.png"
-                                    value={logoUrlInput}
-                                    onChange={e => setLogoUrlInput(e.target.value)}
-                                    className="h-11 bg-slate-50 border-slate-200"
-                                />
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Logo URL (Imagem)</Label>
+                                    <Input
+                                        placeholder="https://exemplo.com/logo.png"
+                                        value={logoUrlInput}
+                                        onChange={e => setLogoUrlInput(e.target.value)}
+                                        className="h-11 bg-slate-50 border-slate-200"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Ou Carregar Localmente</Label>
+                                    <div className="flex items-center gap-4 p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer group relative">
+                                        <Input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleFileChange}
+                                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                        />
+                                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-cyan-100 text-cyan-600 group-hover:bg-cyan-200 transition-colors">
+                                            <Cpu className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-700">Clique para selecionar</p>
+                                            <p className="text-[10px] text-slate-400">JPG, PNG ou SVG</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <p className="text-[10px] text-slate-400">Deixe em branco para usar o logo padrão Ion.</p>
                             </div>
                             <div className="space-y-2">

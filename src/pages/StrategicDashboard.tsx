@@ -5,11 +5,12 @@ import { JiraIssue } from "@/types/jira"
 import { Link } from "react-router-dom"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Sparkles, Rocket, Target, Zap, LayoutDashboard } from "lucide-react"
+import { Search, Sparkles, Rocket, Target, Zap, LayoutDashboard, AlertTriangle } from "lucide-react"
 import { AiService } from "@/services/ai"
 import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
+import { useTranslation } from "react-i18next"
 
 const TubularBar = (props: any) => {
     const { fill, x, y, width, height, index } = props;
@@ -65,6 +66,7 @@ const TubularBar = (props: any) => {
 };
 
 export function StrategicDashboard() {
+    const { t } = useTranslation()
     const [okrEpics, setOkrEpics] = useState<JiraIssue[]>([])
     const [extraEpics, setExtraEpics] = useState<JiraIssue[]>([])
     const [allEpics, setAllEpics] = useState<JiraIssue[]>([]) // Fallback or Combined
@@ -236,7 +238,7 @@ export function StrategicDashboard() {
     const EpicList = ({ title, list }: { title: string, list: JiraIssue[] }) => (
         <div className="space-y-4 mb-8">
             <h3 className="text-xl font-semibold border-b pb-2">{title}</h3>
-            {list.length === 0 ? <p className="text-muted-foreground italic">No epics configured.</p> : (
+            {list.length === 0 ? <p className="text-muted-foreground italic">{t('dashboard.no_epics', 'No epics configured.')}</p> : (
                 list.map(epic => (
                     <Link to={`/epic-analysis?key=${epic.key}`} key={epic.id} className="block group">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 last:pb-0 group-hover:bg-slate-50 dark:group-hover:bg-white/5 p-3 rounded-xl transition-all duration-200">
@@ -246,8 +248,14 @@ export function StrategicDashboard() {
                                     <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-realestate-primary-600 transition-colors">{epic.fields.summary}</p>
                                 </div>
                                 <p className="text-xs text-slate-400 font-medium">
-                                    Responsável: {epic.fields.assignee ? epic.fields.assignee.displayName : "Não atribuído"}
+                                    {t('dashboard.responsible', 'Responsável')}: {epic.fields.assignee ? epic.fields.assignee.displayName : t('dashboard.not_assigned', "Não atribuído")}
                                 </p>
+                                {(epic.progress ?? 0) === 0 && (
+                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-md border border-amber-100 dark:border-amber-800 animate-pulse w-fit mt-1">
+                                        <AlertTriangle size={10} />
+                                        <span className="text-[9px] font-black uppercase tracking-tighter">{t('objectives.okr_cross_alert', 'Considerar esforço - OKR Cross')}</span>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex items-center space-x-3">
                                 <Badge variant="outline" className={`text-[10px] font-bold uppercase tracking-wider border-none
