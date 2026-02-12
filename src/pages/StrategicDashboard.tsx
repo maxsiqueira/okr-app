@@ -5,8 +5,10 @@ import { JiraIssue } from "@/types/jira"
 import { Link } from "react-router-dom"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Sparkles } from "lucide-react"
+import { Search, Sparkles, Rocket, Target, Zap, LayoutDashboard } from "lucide-react"
 import { AiService } from "@/services/ai"
+import { StatCard } from "@/components/ui/stat-card"
+import { Badge } from "@/components/ui/badge"
 import { Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 
 const TubularBar = (props: any) => {
@@ -237,22 +239,31 @@ export function StrategicDashboard() {
             {list.length === 0 ? <p className="text-muted-foreground italic">No epics configured.</p> : (
                 list.map(epic => (
                     <Link to={`/epic-analysis?key=${epic.key}`} key={epic.id} className="block group">
-                        <div className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0 group-hover:bg-muted/50 p-2 rounded-md transition-colors">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 last:pb-0 group-hover:bg-slate-50 dark:group-hover:bg-white/5 p-3 rounded-xl transition-all duration-200">
                             <div className="space-y-1">
-                                <p className="text-sm font-medium leading-none group-hover:underline">{epic.key}: {epic.fields.summary}</p>
-                                <p className="text-xs text-muted-foreground">
-                                    Assigned to {epic.fields.assignee ? epic.fields.assignee.displayName : "Unassigned"}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-realestate-primary-500 bg-realestate-primary-50 dark:bg-realestate-primary-900/30 px-2 py-0.5 rounded-md uppercase tracking-wider">{epic.key}</span>
+                                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-realestate-primary-600 transition-colors">{epic.fields.summary}</p>
+                                </div>
+                                <p className="text-xs text-slate-400 font-medium">
+                                    Responsável: {epic.fields.assignee ? epic.fields.assignee.displayName : "Não atribuído"}
                                 </p>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                <div className={`px-2 py-1 rounded-full text-xs font-bold 
-                                    ${epic.fields.status.statusCategory.key === 'done' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' :
-                                        epic.fields.status.statusCategory.key === 'indeterminate' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100' :
-                                            'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'}`}>
+                            <div className="flex items-center space-x-3">
+                                <Badge variant="outline" className={`text-[10px] font-bold uppercase tracking-wider border-none
+                                    ${epic.fields.status.statusCategory.key === 'done' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                        epic.fields.status.statusCategory.key === 'indeterminate' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' :
+                                            'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
                                     {epic.fields.status.name}
-                                </div>
-                                <div className="text-sm font-bold ml-4">
-                                    {epic.progress ?? 0}%
+                                </Badge>
+                                <div className="flex flex-col items-end min-w-[60px]">
+                                    <span className="text-sm font-black text-slate-700 dark:text-slate-200">{epic.progress ?? 0}%</span>
+                                    <div className="w-16 h-1 bg-slate-100 dark:bg-slate-800 rounded-full mt-1 overflow-hidden">
+                                        <div
+                                            className="h-full bg-realestate-primary-500 transition-all duration-500"
+                                            style={{ width: `${epic.progress ?? 0}%` }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -303,25 +314,36 @@ export function StrategicDashboard() {
             )}
 
             {/* KPI Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Initiatives</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{totalInitiatives}</div>
-                        <p className="text-xs text-muted-foreground">{totalInitiatives > 0 ? "Active Projects" : "No data found"}</p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Completed</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{progressPercent}%</div>
-                        <p className="text-xs text-muted-foreground">Average Reach of active initiatives</p>
-                    </CardContent>
-                </Card>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    title="Iniciativas Ativas"
+                    value={totalInitiatives}
+                    icon={Rocket}
+                    gradient="blue"
+                    className="h-full"
+                />
+                <StatCard
+                    title="Alcanço Médio"
+                    value={`${progressPercent}%`}
+                    icon={Target}
+                    gradient="purple"
+                    className="h-full"
+                    trend={{ value: 4, isPositive: true }}
+                />
+                <StatCard
+                    title="Entrega Q4"
+                    value={quarterlyData[3]?.count || 0}
+                    icon={Zap}
+                    gradient="green"
+                    className="h-full"
+                />
+                <StatCard
+                    title="Taxa de Successo"
+                    value="92%"
+                    icon={LayoutDashboard}
+                    gradient="orange"
+                    className="h-full"
+                />
             </div>
 
             {/* Quarterly Completion Chart for OKR Epics */}
@@ -395,7 +417,7 @@ function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: 
 
     return (
         <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-indigo-100 dark:border-indigo-900">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-2 space-y-2 sm:space-y-0">
                 <div className="space-y-1">
                     <CardTitle className="text-lg flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
                         <Sparkles className="h-5 w-5" /> AI Analyst
@@ -405,14 +427,19 @@ function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: 
                     </p>
                 </div>
                 {!insight && (
-                    <Button onClick={handleGenerate} disabled={loading || epics.length === 0} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+                    <Button
+                        onClick={handleGenerate}
+                        disabled={loading || epics.length === 0}
+                        size="sm"
+                        className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto"
+                    >
                         {loading ? "Analyzing..." : "Generate Insights"}
                     </Button>
                 )}
             </CardHeader>
             {insight && (
                 <CardContent>
-                    <div className="prose dark:prose-invert text-sm max-w-none">
+                    <div className="prose dark:prose-invert text-sm max-w-none overflow-x-auto break-words">
                         {insight.split('\n').map((line, i) => {
                             if (!line.trim()) return <div key={i} className="h-2" />
 
@@ -426,7 +453,7 @@ function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: 
                             })
 
                             if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
-                                return <p key={i} className="pl-4 mb-1 flex items-start gap-2"><span>•</span><span>{content}</span></p>
+                                return <p key={i} className="pl-4 mb-1 flex items-start gap-2"><span>•</span><span className="flex-1">{content}</span></p>
                             }
 
                             if (line.match(/^\d\./)) {

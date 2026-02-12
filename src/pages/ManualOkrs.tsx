@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Printer, ChevronDown, ChevronRight, Target, BarChart3, Pencil, Sparkles, Loader2, Check, X, Lightbulb, Bot, AlertCircle } from "lucide-react"
+import { Plus, Trash2, Printer, ChevronDown, ChevronRight, Target, BarChart3, Pencil } from "lucide-react"
 import { db } from "@/lib/firebase"
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
-import { AiService, SuggestedOkr } from "@/services/ai"
 
 interface KeyResult {
     id: string
@@ -37,15 +35,6 @@ export function ManualOkrs() {
     // Filters
     const [filterYear, setFilterYear] = useState<number | "ALL">("ALL")
     const [filterQuarter, setFilterQuarter] = useState<string>("ALL")
-
-    // AI Suggestion States
-    const [aiMacroContext, setAiMacroContext] = useState("")
-    const [aiYear, setAiYear] = useState(new Date().getFullYear())
-    const [aiQuarter, setAiQuarter] = useState("Q1")
-    const [aiSuggestions, setAiSuggestions] = useState<SuggestedOkr[]>([])
-    const [aiLoading, setAiLoading] = useState(false)
-    const [aiError, setAiError] = useState<string | null>(null)
-    const [showAiPanel, setShowAiPanel] = useState(false)
 
     useEffect(() => {
         const q = query(collection(db, "manual_okrs"));
@@ -148,62 +137,6 @@ export function ManualOkrs() {
             else next.add(id)
             return next
         })
-    }
-
-    // AI Suggestion Handlers
-    const handleGenerateAiSuggestions = async () => {
-        if (!aiMacroContext.trim()) {
-            setAiError("Por favor, descreva o contexto estratégico para gerar sugestões.")
-            return
-        }
-
-        setAiLoading(true)
-        setAiError(null)
-        setAiSuggestions([])
-
-        try {
-            const suggestions = await AiService.suggestOkrs(aiMacroContext, aiYear, aiQuarter)
-            setAiSuggestions(suggestions)
-            if (suggestions.length === 0) {
-                setAiError("Nenhuma sugestão gerada. Tente fornecer mais contexto.")
-            }
-        } catch (error: any) {
-            setAiError(error.message)
-        } finally {
-            setAiLoading(false)
-        }
-    }
-
-    const handleApproveSuggestion = async (suggestion: SuggestedOkr) => {
-        const newItem: ManualObjective = {
-            id: Date.now().toString(),
-            name: suggestion.objectiveName,
-            year: aiYear,
-            quarter: aiQuarter,
-            krs: suggestion.keyResults.map((kr, index) => ({
-                id: `${Date.now()}-${index}`,
-                name: kr.name,
-                responsible: kr.responsible || "",
-                progress: 0,
-                notes: kr.notes || ""
-            }))
-        }
-        await saveObjectiveToFirestore(newItem)
-        setExpandedIds(prev => new Set(prev).add(newItem.id))
-
-        // Remove da lista de sugestões
-        setAiSuggestions(prev => prev.filter(s => s.objectiveName !== suggestion.objectiveName))
-    }
-
-    const handleRejectSuggestion = (suggestion: SuggestedOkr) => {
-        setAiSuggestions(prev => prev.filter(s => s.objectiveName !== suggestion.objectiveName))
-    }
-
-    const handleApproveAllSuggestions = async () => {
-        for (const suggestion of aiSuggestions) {
-            await handleApproveSuggestion(suggestion)
-        }
-        setAiSuggestions([])
     }
 
     const filteredObjectives = objectives.filter(obj => {

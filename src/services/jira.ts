@@ -10,6 +10,27 @@ const addDebugLog = (log: { type: string, message: string, jql?: string, duratio
 
 const MOCK_DELAY = 800
 
+// Cache Layer
+interface CacheEntry {
+    data: any;
+    timestamp: number;
+}
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const jiraCache: Record<string, CacheEntry> = {};
+
+const getCachedData = (key: string): any | null => {
+    const entry = jiraCache[key];
+    if (entry && (Date.now() - entry.timestamp < CACHE_TTL)) {
+        console.log(`[JiraService] ⚡ Cache HIT for ${key}`);
+        return entry.data;
+    }
+    return null;
+};
+
+const setCacheData = (key: string, data: any) => {
+    jiraCache[key] = { data, timestamp: Date.now() };
+};
+
 // Mock Data
 const MOCK_EPICS: JiraIssue[] = [
     {
@@ -188,7 +209,13 @@ const fetchAllIssues = async (targetUrl: string, headers: any, jql: string, fiel
 
 export const JiraService = {
     // Get ALL Epics with their calculated progress based on child issues in the project
-    getEpics: async (projectKey: string, version: string = "ALL"): Promise<JiraIssue[]> => {
+    getEpics: async (projectKey: string, version: string = "ALL", forceRefresh = false): Promise<JiraIssue[]> => {
+        const cacheKey = `getEpics-${projectKey}-${version}`;
+        if (!forceRefresh) {
+            const cached = getCachedData(cacheKey);
+            if (cached) return cached;
+        }
+
         console.log(`[JiraService] getEpics for ${projectKey} (Version: ${version})`)
         // Check for credentials
         const url = localStorage.getItem("jira_url")
@@ -248,17 +275,7 @@ export const JiraService = {
 
                 console.log(`[JiraService] Found ${epics.length} epics and ${issues.length - epics.length} potential children.`)
 
-                // 3. Map to our format and calculate progress
-                const getRelatedIssues = (parentKey: string): any[] => {
-                    const direct = childrenMap[parentKey] || []
-                    let total = [...direct]
-                    direct.forEach(d => {
-                        total = [...total, ...getRelatedIssues(d.key)]
-                    })
-                    return total
-                }
-
-                return epics.map((epic: any) => {
+                const result = epics.map((epic: any) => {
                     const directChildren = childrenMap[epic.key] || []
 
                     const activeDirect = directChildren.filter(issue => {
@@ -293,9 +310,11 @@ export const JiraService = {
                     }
                 })
 
+                setCacheData(cacheKey, result);
+                return result;
+
             } catch (error) {
                 console.error("[JiraService] Real fetch failed:", error)
-                // Fallthrough to mock
             }
         }
 
@@ -310,8 +329,14 @@ export const JiraService = {
     },
 
     // Get specific list of Epics by Key (for OKR vs Extra split)
-    getEpicsByKeys: async (keys: string[], version: string = "ALL"): Promise<JiraIssue[]> => {
+    getEpicsByKeys: async (keys: string[], version: string = "ALL", forceRefresh = false): Promise<JiraIssue[]> => {
         if (!keys || keys.length === 0) return []
+
+        const cacheKey = `getEpicsByKeys-${keys.sort().join(',')}-${version}`;
+        if (!forceRefresh) {
+            const cached = getCachedData(cacheKey);
+            if (cached) return cached;
+        }
 
         const url = localStorage.getItem("jira_url")
         const email = localStorage.getItem("jira_email")
@@ -369,8 +394,7 @@ export const JiraService = {
                         })
                     }
                 }
-
-                return issues.map((epic: any) => {
+                const result = issues.map((epic: any) => {
                     const children = childrenMap[epic.key] || []
 
                     // 1. Calculate Progress
@@ -416,6 +440,9 @@ export const JiraService = {
                     } as any
                 })
 
+                setCacheData(cacheKey, result);
+                return result;
+
             } catch (e) {
                 console.error("Failed to fetch specific epics", e)
                 return []
@@ -425,7 +452,12 @@ export const JiraService = {
     },
 
     // Get specific Epic details + Children
-    getEpicDetails: async (epicKey: string): Promise<{ epic: JiraIssue, children: JiraIssue[] } | null> => {
+    getEpicDetails: async (epicKey: string, forceRefresh = false): Promise<{ epic: JiraIssue, children: JiraIssue[] } | null> => {
+        const cacheKey = `getEpicDetails-${epicKey}`;
+        if (!forceRefresh) {
+            const cached = getCachedData(cacheKey);
+            if (cached) return cached;
+        }
         const url = localStorage.getItem("jira_url")
         const email = localStorage.getItem("jira_email")
         const token = localStorage.getItem("jira_token")
@@ -553,7 +585,9 @@ export const JiraService = {
                 // Assign to epic
                 (epic as any).progress = progress
 
-                return { epic, children }
+                const result = { epic, children };
+                setCacheData(cacheKey, result);
+                return result;
 
             } catch (error: any) {
                 console.error(`[JiraService] Real fetch failed for ${epicKey}:`, error)
@@ -729,7 +763,14 @@ export const JiraService = {
         }
     },
 
-    getOkrMetrics: async (forcedProjectKey?: string): Promise<{ cycleTime: any[], aiAdoption: any[], epicStats: { total: number, done: number, percent: number }, investmentMix: any[] }> => {
+    getOkrMetrics: async (forcedProjectKey?: string, forceRefresh = false): Promise<{ cycleTime: any[], aiAdoption: any[], epicStats: { total: number, done: number, percent: number }, investmentMix: any[], typeStats: any, analystStats: any[] }> => {
+        const projectKey = forcedProjectKey || localStorage.getItem("jira_project_key") || ""
+        const cacheKey = `getOkrMetrics-${projectKey}`;
+
+        if (!forceRefresh) {
+            const cached = getCachedData(cacheKey);
+            if (cached) return cached;
+        }
         const url = localStorage.getItem("jira_url")
         const email = localStorage.getItem("jira_email")
         const token = localStorage.getItem("jira_token")
@@ -747,18 +788,81 @@ export const JiraService = {
                 }
 
                 // 1. Throughput & Strategic Mix
-                // Restrict to the active project and common STORY-level types to avoid technical subtask noise
-                const projectKey = forcedProjectKey || localStorage.getItem("jira_project_key") || ""
-                let projectFilter = projectKey ? `project = "${projectKey}" AND ` : ""
+                const projectInput = forcedProjectKey || localStorage.getItem("jira_project_key") || ""
+                let manualOkrKeys = (localStorage.getItem("okr_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
+                if (projectInput.includes('-') && !manualOkrKeys.includes(projectInput)) {
+                    manualOkrKeys.push(projectInput)
+                }
+                const projects = (!projectInput.includes('-') && projectInput) ? [projectInput] : []
 
-                console.log(`[JiraService] getOkrMetrics triggering for project: ${projectKey || 'GLOBAL'}`);
+                console.log(`[JiraService] getOkrMetrics: Root fetch for ${projects.join(',')} and epics: ${manualOkrKeys.join(',')}`);
 
-                // Broaden issuetype list to catch variants across languages and configurations
-                const jql = `${projectFilter}resolved >= "2025-01-01" AND resolved <= "2025-12-31" AND issuetype not in (Sub-task, Subtask, Subtarefa, "Sub-tarefa") ORDER BY resolved ASC`
-                const issues = await fetchAllIssues(targetUrl, headers, jql, ["created", "resolutiondate", "updated", "issuetype", "timespent", "components", "labels"])
+                const fields = ["created", "resolutiondate", "updated", "issuetype", "timespent", "components", "labels", "status", "parent", "customfield_10014", "assignee"]
 
-                if (issues.length === 0) {
-                    console.warn("[JiraService] No issues found for the year 2025 with current JQL.");
+                // STEP 1: Fetch Base Items (Project work updated this year + The Seed Epics)
+                let baseJql = (projects.length > 0)
+                    ? `project in ("${projects.join('","')}") AND (resolved >= "2025-01-01" OR updated >= "2025-01-01")`
+                    : ""
+                if (manualOkrKeys.length > 0) {
+                    const seedJql = `key in ("${manualOkrKeys.join('","')}")`
+                    baseJql = baseJql ? `(${baseJql}) OR (${seedJql})` : seedJql
+                }
+                if (!baseJql) baseJql = 'updated >= "2025-01-01"'
+
+                const baseIssues = await fetchAllIssues(targetUrl, headers, baseJql, fields)
+
+                // STEP 2: Recursive Child Fetching (Stories under Epics + Subtasks under Stories)
+                const itemsToExpand = baseIssues.map((i: any) => i.key)
+                let recursiveItems: any[] = []
+                if (itemsToExpand.length > 0) {
+                    for (let n = 0; n < itemsToExpand.length; n += 50) {
+                        const chunk = itemsToExpand.slice(n, n + 50)
+                        const childJql = `(parent in ("${chunk.join('","')}") OR "Epic Link" in ("${chunk.join('","')}") OR "Epic-Link" in ("${chunk.join('","')}") )`
+                        const batch = await fetchAllIssues(targetUrl, headers, childJql, fields)
+                        recursiveItems = [...recursiveItems, ...batch]
+                    }
+                    const childKeys = recursiveItems.map(i => i.key)
+                    if (childKeys.length > 0) {
+                        for (let n = 0; n < childKeys.length; n += 50) {
+                            const chunk = childKeys.slice(n, n + 50)
+                            const subJql = `parent in ("${chunk.join('","')}")`
+                            const batch = await fetchAllIssues(targetUrl, headers, subJql, fields)
+                            recursiveItems = [...recursiveItems, ...batch]
+                        }
+                    }
+                }
+
+                const issuesMap = new Map<string, any>()
+                baseIssues.forEach(i => issuesMap.set(i.key, i))
+                recursiveItems.forEach(i => issuesMap.set(i.key, i))
+                const allIssues = Array.from(issuesMap.values())
+
+                console.log(`[JiraService] getOkrMetrics: ${allIssues.length} items consolidated (Base: ${baseIssues.length}, Recursive: ${recursiveItems.length})`);
+
+                const categoryMap: Record<string, 'innovation' | 'operation' | 'debt'> = {}
+                const parentMap: Record<string, string> = {}
+
+                allIssues.forEach(i => {
+                    const type = (i.fields.issuetype?.name || "").toLowerCase()
+                    const isBug = type.includes("bug") || type.includes("erro") || type.includes("defeito")
+                    const isEpic = type === "epic" || type === "épico" || type === "epico"
+                    const components = i.fields.components || []
+                    const isInnovation = components.some((c: any) => /Novo|Evolução|Discovery|IA|Analytics|Migration/i.test(c.name))
+                    const isDebt = components.some((c: any) => /Bug|Erro|Defeito|Debt|Dívida/i.test(c.name)) || isBug
+
+                    const parentKey = i.fields.parent?.key || i.fields.customfield_10014 || (i.fields as any)["Epic Link"]
+                    if (parentKey) parentMap[i.key] = parentKey
+
+                    if (isDebt) categoryMap[i.key] = 'debt'
+                    else if (isInnovation || isEpic) categoryMap[i.key] = 'innovation'
+                })
+
+                const resolveCategory = (key: string, visited = new Set()): 'innovation' | 'operation' | 'debt' => {
+                    if (categoryMap[key]) return categoryMap[key]
+                    if (visited.has(key)) return 'operation'
+                    visited.add(key)
+                    const p = parentMap[key]
+                    return p ? resolveCategory(p, visited) : 'operation'
                 }
 
                 const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -766,30 +870,58 @@ export const JiraService = {
                 monthNames.forEach(m => months[m] = { count: 0, hours: 0 })
 
                 const mix = { innovation: 0, operation: 0, debt: 0 }
+                const typeStats = { stories: 0, epics: 0, bugs: 0, tasks: 0, subtasks: 0, others: 0 }
+                const analystStats: Record<string, { name: string, hours: number, tasks: number, avatar?: string }> = {}
+                let aiCount = 0
+                let totalDelivered2025 = 0
 
-                issues.forEach((i: any) => {
-                    const dStr = i.fields.resolutiondate || i.fields.updated || i.fields.created
-                    const hours = (i.fields.timespent || 0) / 3600
+                allIssues.forEach((i: any) => {
                     const type = (i.fields.issuetype?.name || "").toLowerCase()
+                    const isSubtask = i.fields.issuetype?.subtask || type.includes("sub-task") || type.includes("subtask")
+                    const statusCategory = i.fields.status?.statusCategory?.key
+                    const isDone = statusCategory === "done"
+                    const hours = (i.fields.timespent || 0) / 3600
+                    const assignee = i.fields.assignee
+                    const analystName = assignee?.displayName || "Sem Analista"
 
-                    if (dStr) {
-                        const d = new Date(dStr)
-                        const key = monthNames[d.getMonth()]
-                        if (months[key]) {
-                            months[key].count++
-                            months[key].hours += hours
+                    if (!analystStats[analystName]) {
+                        analystStats[analystName] = { name: analystName, hours: 0, tasks: 0, avatar: assignee?.avatarUrls?.['32x32'] }
+                    }
+
+                    // 1. GLOBAL EFFORT & MIX
+                    const updateDateStr = i.fields.updated || i.fields.created
+                    if (updateDateStr) {
+                        const ud = new Date(updateDateStr)
+                        if (ud.getFullYear() >= 2025) {
+                            const mKey = monthNames[ud.getMonth()]
+                            if (months[mKey]) months[mKey].hours += hours
+                            const cat = resolveCategory(i.key)
+                            mix[cat] += hours
+
+                            // Add to analyst hours
+                            analystStats[analystName].hours += hours
                         }
                     }
 
-                    // Strategic Mix Categorization - Expanded heuristic
-                    const hasInnovationComp = i.fields.components?.some((c: any) => /Novo|Evolução|Discovery|IA|Analytics|Migration/i.test(c.name))
+                    // 2. DELIVERIES
+                    const dStr = i.fields.resolutiondate || (isDone ? i.fields.updated : null)
+                    const d = dStr ? new Date(dStr) : null
+                    if (isDone && d && d.getFullYear() === 2025) {
+                        const mKey = monthNames[d.getMonth()]
+                        if (months[mKey]) months[mKey].count++
+                        totalDelivered2025++
 
-                    if (type === 'bug' || type === 'erro' || type === 'defeito' || type === 'debt' || type === 'dívida') {
-                        mix.debt++
-                    } else if (hasInnovationComp || type === 'epic') {
-                        mix.innovation++
-                    } else {
-                        mix.operation++
+                        // Add to analyst tasks (only count resolved/done items as per requirement)
+                        analystStats[analystName].tasks++
+
+                        if (isSubtask) typeStats.subtasks++
+                        else if (type.includes("story") || type.includes("história") || type === "historia") typeStats.stories++
+                        else if (type === "epic" || type === "épico" || type === "epico") typeStats.epics++
+                        else if (type.includes("bug") || type === "erro") typeStats.bugs++
+                        else if (type === "task" || type === "tarefa") typeStats.tasks++
+                        else typeStats.others++
+                        const labels = i.fields.labels || []
+                        if (labels.some((l: string) => /ai|ia|assisted|copilot/i.test(l))) aiCount++
                     }
                 })
 
@@ -799,33 +931,26 @@ export const JiraService = {
                     hours: Math.round(months[name].hours)
                 }))
 
-                const totalItems = issues.length || 1
+                const denominatorMix = mix.innovation + mix.operation + mix.debt || 1
                 const investmentMix = [
-                    { name: 'Inovação/Evolução', value: Math.round((mix.innovation / totalItems) * 100), color: '#4F46E5', count: mix.innovation },
-                    { name: 'Operação/Sustentação', value: Math.round((mix.operation / totalItems) * 100), color: '#0EA5E9', count: mix.operation },
-                    { name: 'Débitos/Bugs', value: Math.round((mix.debt / totalItems) * 100), color: '#F43F5E', count: mix.debt }
+                    { name: 'Inovação/Evolução', value: Math.round((mix.innovation / denominatorMix) * 100), color: '#4F46E5', hours: Math.round(mix.innovation) },
+                    { name: 'Operação/Sustentação', value: Math.round((mix.operation / denominatorMix) * 100), color: '#0EA5E9', hours: Math.round(mix.operation) },
+                    { name: 'Débitos/Bugs', value: Math.round((mix.debt / denominatorMix) * 100), color: '#F43F5E', hours: Math.round(mix.debt) }
                 ]
 
-                // 2. AI Adoption (2025 focus) - Search specifically
-                const aiCount = issues.filter(i => {
-                    const labels = i.fields.labels || []
-                    return labels.some((l: string) => /ai|ia|assisted|copilot/i.test(l))
-                }).length
-
                 const aiAdoption = [
-                    { name: 'Manual', value: issues.length - aiCount },
+                    { name: 'Manual', value: totalDelivered2025 - aiCount },
                     { name: 'AI Assisted', value: aiCount }
                 ]
 
-                // 3. Epic Conclusion (Calculated from manual OKR list OR all 2025 Epics)
-                const manualOkrKeys = (localStorage.getItem("okr_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
-
-                let epicsJql = `project = "${projectKey}" AND issuetype = Epic AND (created >= "2025-01-01" OR labels = "OKR2025")`
-                if (manualOkrKeys.length > 0) {
-                    epicsJql = `key in ("${manualOkrKeys.join('","')}")`
+                let epicsSeed = manualOkrKeys.length > 0 ? manualOkrKeys : []
+                if (epicsSeed.length === 0 && projects.length > 0) {
+                    const allEpics = await fetchAllIssues(targetUrl, headers, `project in ("${projects.join('","')}") AND issuetype = Epic`, ["status"])
+                    epicsSeed = allEpics.map(e => e.key)
                 }
-
+                const epicsJql = epicsSeed.length > 0 ? `key in ("${epicsSeed.join('","')}")` : `project in ("${projects.join('","')}") AND issuetype = Epic`
                 const epics = await fetchAllIssues(targetUrl, headers, epicsJql, ["status"])
+
                 const epicStats = {
                     total: epics.length,
                     done: epics.filter((e: any) => e.fields.status?.statusCategory?.key === "done").length,
@@ -833,14 +958,26 @@ export const JiraService = {
                 }
                 epicStats.percent = epicStats.total > 0 ? Math.round((epicStats.done / epicStats.total) * 100) : 0
 
-                return { cycleTime, aiAdoption, epicStats, investmentMix } as any
+                // Convert analystStats to array for frontend
+                const analystArray = Object.values(analystStats).sort((a, b) => b.hours - a.hours)
+
+                const result = { cycleTime, aiAdoption, epicStats, investmentMix, typeStats, analystStats: analystArray } as any;
+                setCacheData(cacheKey, result);
+                return result;
 
             } catch (e) {
                 console.error("[JiraService] Metrics fetch failed", e)
                 throw e
             }
         }
-        return { cycleTime: [], aiAdoption: [], epicStats: { total: 0, done: 0, percent: 0 }, investmentMix: [] }
+        return {
+            cycleTime: [],
+            aiAdoption: [],
+            epicStats: { total: 0, done: 0, percent: 0 },
+            investmentMix: [],
+            typeStats: { stories: 0, epics: 0, bugs: 0, tasks: 0, subtasks: 0, others: 0 },
+            analystStats: []
+        }
     },
 
     // Kept for backward compatibility but unused internally now

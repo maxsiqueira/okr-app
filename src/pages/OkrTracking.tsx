@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { ResponsiveContainer, XAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar } from "recharts"
 import { JiraService } from "@/services/jira"
-import { Target, Zap, Cpu, TrendingUp, BarChart3, Sparkles, PieChart as PieIcon, Hourglass, RefreshCw } from "lucide-react"
+import { Target, Zap, Cpu, TrendingUp, BarChart3, Sparkles, PieChart as PieIcon, Hourglass, RefreshCw, Users } from "lucide-react"
+import { StatCard } from "@/components/ui/stat-card"
 
 const TubularBar = (props: any) => {
     const { fill, x, y, width, height, index } = props;
@@ -64,7 +65,9 @@ export function OkrTracking() {
         cycleTime: any[],
         aiAdoption: any[],
         epicStats: { total: number, done: number, percent: number },
-        investmentMix: any[]
+        investmentMix: any[],
+        typeStats?: { stories: number, epics: number, bugs: number, tasks: number, subtasks: number, others: number },
+        analystStats: any[]
     } | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -74,11 +77,11 @@ export function OkrTracking() {
         loadData(projectKey)
     }, [])
 
-    const loadData = async (key: string) => {
-        setLoading(true)
+    const loadData = async (key: string, forceRefresh = false) => {
+        setLoading(!metrics) // Only show skeleton if no data yet
         setError(null)
         try {
-            const data = await JiraService.getOkrMetrics(key)
+            const data = await JiraService.getOkrMetrics(key, forceRefresh)
             setMetrics(data)
         } catch (e: any) {
             console.error("Failed to load metrics", e)
@@ -170,47 +173,33 @@ export function OkrTracking() {
             </div>
 
             {/* Top Level KPIs */}
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
-                <Card className="border-none bg-primary text-white shadow-xl shadow-primary/20">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between opacity-80 mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Total Entregue</span>
-                            <Zap className="h-4 w-4" />
-                        </div>
-                        <div className="text-3xl font-black">{totalDeliveries}</div>
-                        <div className="text-[10px] mt-1 font-medium italic">Histórias, Tasks e Defeitos</div>
-                    </CardContent>
-                </Card>
-                <Card className="border-none bg-slate-900 text-white shadow-xl">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between opacity-70 mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Esforço Investido</span>
-                            <Hourglass className="h-4 w-4" />
-                        </div>
-                        <div className="text-3xl font-black">{totalHours.toLocaleString()}h</div>
-                        <div className="text-[10px] mt-1 font-medium italic">Equivalente a {Math.round(totalHours / 160)} Homens/Mês</div>
-                    </CardContent>
-                </Card>
-                <Card className="border-none bg-white shadow-xl border-l-4 border-l-emerald-500">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between text-slate-400 mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Aderência ao Roadmap</span>
-                            <Target className="h-4 w-4" />
-                        </div>
-                        <div className="text-3xl font-black text-slate-800">{epicStats.percent}%</div>
-                        <div className="text-[10px] mt-1 font-medium text-emerald-600">Projeção Q4 estável</div>
-                    </CardContent>
-                </Card>
-                <Card className="border-none bg-white shadow-xl border-l-4 border-l-indigo-500">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between text-slate-400 mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest">Fator de Velocidade</span>
-                            <TrendingUp className="h-4 w-4" />
-                        </div>
-                        <div className="text-3xl font-black text-slate-800">{Math.round(avgMonthly)}</div>
-                        <div className="text-[10px] mt-1 font-medium text-slate-500 italic">Média de itens/mês</div>
-                    </CardContent>
-                </Card>
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    title="Total Entregue"
+                    value={totalDeliveries}
+                    icon={Zap}
+                    gradient="blue"
+                    trend={{ value: 12, isPositive: true }}
+                />
+                <StatCard
+                    title="Esforço Investido"
+                    value={`${totalHours.toLocaleString()}h`}
+                    icon={Hourglass}
+                    gradient="purple"
+                />
+                <StatCard
+                    title="Adesão ao Roadmap"
+                    value={`${epicStats.percent}%`}
+                    icon={Target}
+                    gradient="green"
+                    trend={{ value: 5, isPositive: true }}
+                />
+                <StatCard
+                    title="Velocidade Média"
+                    value={Math.round(avgMonthly)}
+                    icon={TrendingUp}
+                    gradient="orange"
+                />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-12">
@@ -301,6 +290,15 @@ export function OkrTracking() {
                                                             Horas: <span className="text-lg font-black">{data.hours}h</span>
                                                         </p>
                                                     </div>
+                                                    <Button
+                                                        onClick={() => loadData(projectKey, true)}
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 gap-2 bg-slate-900 text-white border-slate-700 hover:bg-slate-800 mt-4"
+                                                    >
+                                                        <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+                                                        Sync
+                                                    </Button>
                                                 </div>
                                             );
                                         }
@@ -316,65 +314,143 @@ export function OkrTracking() {
                         </div>
                     </CardContent>
                 </Card>
-            </div>
 
-            {/* Strategic Footer / Predictive */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <Card className="bg-slate-900 text-white border-0 shadow-2xl overflow-hidden relative">
-                    <div className="absolute -right-4 -bottom-4 opacity-5">
-                        <Sparkles size={160} />
-                    </div>
-                    <CardHeader>
-                        <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-primary" />
-                            <CardTitle className="text-sm font-black uppercase tracking-widest text-primary">Análise Preditiva de Impacto</CardTitle>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-4">
-                            <p className="text-sm leading-relaxed text-slate-300">
-                                Com base no **Mix de Investimento** atual de 2025, a ION está destinando <span className="text-white font-bold">{investmentMix.find(m => m.name.includes("Inovação"))?.value || 0}%</span> da sua capacidade para novos produtos. Este patamar é considerado **Saudável** para escala.
-                            </p>
-                            <div className="flex items-center gap-4 border-t border-slate-800 pt-4">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Estabilidade de Operação</span>
-                                    <span className="text-emerald-400 font-black">94%</span>
+                {/* Analysts Performance - NEW SECTION */}
+                <Card className="lg:col-span-12 border-2 border-slate-100 shadow-xl overflow-hidden">
+                    <CardHeader className="bg-slate-50/50 border-b py-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-lg shadow-sm border">
+                                    <Users className="h-4 w-4 text-primary" />
                                 </div>
-                                <div className="flex flex-col border-l border-slate-800 pl-4">
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Risco de Burnout</span>
-                                    <span className="text-amber-400 font-black">Baixo</span>
+                                <div>
+                                    <CardTitle className="text-lg font-bold tracking-tight">Performance por Analista 2025</CardTitle>
+                                    <CardDescription>Distribuição de esforço e entregas por membro da ION</CardDescription>
                                 </div>
                             </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/50 border-b">
+                                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">Analista</th>
+                                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Esforço (Horas)</th>
+                                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Entregas (Tasks)</th>
+                                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Produtividade</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(metrics?.analystStats || []).map((analyst: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    {analyst.avatar ? (
+                                                        <img src={analyst.avatar} alt="" className="w-8 h-8 rounded-full border-2 border-white shadow-sm" />
+                                                    ) : (
+                                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs uppercase">
+                                                            {analyst.name.charAt(0)}
+                                                        </div>
+                                                    )}
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-slate-800 tracking-tight">{analyst.name}</span>
+                                                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">Membro do Time</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="text-sm font-black text-slate-700">{Math.round(analyst.hours)}h</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-[10px] font-black border border-emerald-100 uppercase">
+                                                    {analyst.tasks} Itens
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full bg-primary rounded-full"
+                                                            style={{ width: `${Math.min(100, (analyst.hours / (totalHours / (metrics?.analystStats?.length || 1))) * 50)}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase">Proporção de Esforço</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {(!metrics?.analystStats || metrics.analystStats.length === 0) && (
+                                        <tr>
+                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-sm font-medium italic">
+                                                Carregando dados de performance...
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* AI & Automation Focus */}
-                <Card className="border-2 border-indigo-100 bg-indigo-50/20 shadow-lg">
-                    <CardHeader>
-                        <div className="flex items-center gap-2">
-                            <Cpu className="h-4 w-4 text-indigo-600" />
-                            <CardTitle className="text-lg font-bold text-slate-800 tracking-tight">Adoção de Inteligência Artificial</CardTitle>
+                {/* Strategic Footer / Predictive */}
+                <div className="lg:col-span-12 grid gap-6 md:grid-cols-2">
+                    <Card className="bg-slate-900 text-white border-0 shadow-2xl overflow-hidden relative">
+                        <div className="absolute -right-4 -bottom-4 opacity-5">
+                            <Sparkles size={160} />
                         </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-end gap-3 mb-4">
-                            <div className="text-5xl font-black text-indigo-600 uppercase">
-                                {totalDeliveries > 0
-                                    ? ((metrics?.aiAdoption.find(a => a.name === 'AI Assisted')?.value || 0) / totalDeliveries * 100).toFixed(1)
-                                    : "0.0"}%
+                        <CardHeader>
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-primary" />
+                                <CardTitle className="text-sm font-black uppercase tracking-widest text-primary">Análise Preditiva de Impacto</CardTitle>
                             </div>
-                            <div className="text-xs font-bold text-slate-500 pb-2 uppercase tracking-tighter">Entregas assistidas por IA</div>
-                        </div>
-                        <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-indigo-500 transition-all duration-[2000ms]"
-                                style={{ width: `${((metrics?.aiAdoption.find(a => a.name === 'AI Assisted')?.value || 0) / totalDeliveries * 100)}%` }}
-                            />
-                        </div>
-                        <p className="text-[10px] mt-2 font-black text-indigo-700 uppercase tracking-widest">Métrica de Maturidade Tecnológica 2025</p>
-                    </CardContent>
-                </Card>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-4">
+                                <p className="text-sm leading-relaxed text-slate-300">
+                                    Com base no **Mix de Investimento** atual de 2025, a ION está destinando <span className="text-white font-bold">{investmentMix.find(m => m.name.includes("Inovação"))?.value || 0}%</span> da sua capacidade para novos produtos. Este patamar é considerado **Saudável** para escala.
+                                </p>
+                                <div className="flex items-center gap-4 border-t border-slate-800 pt-4">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Estabilidade de Operação</span>
+                                        <span className="text-emerald-400 font-black">94%</span>
+                                    </div>
+                                    <div className="flex flex-col border-l border-slate-800 pl-4">
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Risco de Burnout</span>
+                                        <span className="text-amber-400 font-black">Baixo</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* AI & Automation Focus */}
+                    <Card className="border-2 border-indigo-100 bg-indigo-50/20 shadow-lg">
+                        <CardHeader>
+                            <div className="flex items-center gap-2">
+                                <Cpu className="h-4 w-4 text-indigo-600" />
+                                <CardTitle className="text-lg font-bold text-slate-800 tracking-tight">Adoção de Inteligência Artificial</CardTitle>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex items-end gap-3 mb-4">
+                                <div className="text-5xl font-black text-indigo-600 uppercase">
+                                    {totalDeliveries > 0
+                                        ? ((metrics?.aiAdoption.find(a => a.name === 'AI Assisted')?.value || 0) / totalDeliveries * 100).toFixed(1)
+                                        : "0.0"}%
+                                </div>
+                                <div className="text-xs font-bold text-slate-500 pb-2 uppercase tracking-tighter">Entregas assistidas por IA</div>
+                            </div>
+                            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-indigo-500 transition-all duration-[2000ms]"
+                                    style={{ width: `${((metrics?.aiAdoption.find(a => a.name === 'AI Assisted')?.value || 0) / totalDeliveries * 100)}%` }}
+                                />
+                            </div>
+                            <p className="text-[10px] mt-2 font-black text-indigo-700 uppercase tracking-widest">Métrica de Maturidade Tecnológica 2025</p>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
         </div>
     )

@@ -1,12 +1,16 @@
 import { useState } from "react"
+import { Outlet } from "react-router-dom"
 import { Header } from "./Header"
 import { Sidebar } from "./Sidebar"
 
-export function Layout({ children }: { children: React.ReactNode }) {
+import { AutoRefreshHandler } from "@/components/AutoRefreshHandler"
+
+export function Layout({ children }: { children?: React.ReactNode }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
     return (
         <div className="relative flex min-h-screen flex-col bg-background">
+            <AutoRefreshHandler />
             <Header onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <div className="flex-1 items-start md:grid md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)]">
                 {/* Backdrop for mobile */}
@@ -23,7 +27,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </aside>
 
                 <main className="flex w-full flex-col overflow-x-hidden p-4 md:p-6 pb-20 md:pb-6">
-                    {children}
+                    {children || <Outlet />}
                 </main>
             </div>
         </div>

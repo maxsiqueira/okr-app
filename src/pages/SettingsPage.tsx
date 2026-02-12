@@ -2,11 +2,17 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { JiraService } from "@/services/jira"
-import { Loader2, RefreshCw, Terminal, CheckCircle2, AlertCircle, ShieldCheck, Database, Zap, Cpu } from "lucide-react"
+import { Loader2, RefreshCw, Terminal, CheckCircle2, AlertCircle, ShieldCheck, Database, Zap, Cpu, LayoutTemplate, Mail, Send } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { UserManagementPanel } from "@/components/settings/UserManagementPanel"
+import { useAuth } from "@/contexts/AuthContext"
+import { db, functions } from "@/lib/firebase"
+import { doc, getDoc, setDoc } from "firebase/firestore"
+import { httpsCallable } from "firebase/functions"
 
 export function SettingsPage() {
+    const { user } = useAuth();
     const [isSyncing, setIsSyncing] = useState(false)
     const [lastSynced, setLastSynced] = useState<string>("Never")
 
@@ -20,10 +26,22 @@ export function SettingsPage() {
     const [defaultEpicKey, setDefaultEpicKey] = useState("")
     const [debugMode, setDebugMode] = useState(false)
     const [geminiKey, setGeminiKey] = useState("")
+    const [autoRefresh, setAutoRefresh] = useState("0")
+    const [logoUrlInput, setLogoUrlInput] = useState("")
 
     // Status State
     const [jiraConnected, setJiraConnected] = useState<boolean | null>(null)
     const [logs, setLogs] = useState<any[]>([])
+
+    // SMTP State
+    const [smtpHost, setSmtpHost] = useState("")
+    const [smtpPort, setSmtpPort] = useState("")
+    const [smtpUser, setSmtpUser] = useState("")
+    const [smtpPassword, setSmtpPassword] = useState("")
+    const [smtpFromEmail, setSmtpFromEmail] = useState("")
+    const [smtpFromName, setSmtpFromName] = useState("")
+    const [isSavingSmtp, setIsSavingSmtp] = useState(false)
+    const [isTestingSmtp, setIsTestingSmtp] = useState(false)
 
     useEffect(() => {
         setJiraUrl(localStorage.getItem("jira_url") || "")
@@ -36,12 +54,33 @@ export function SettingsPage() {
         setGeminiKey(localStorage.getItem("gemini_api_key") || "")
         setDebugMode(localStorage.getItem("debug_mode") === "true")
         setLastSynced(localStorage.getItem("last_synced_time") || "Never")
+        setAutoRefresh(localStorage.getItem("ion_auto_refresh_minutes") || "0")
+        setLogoUrlInput(localStorage.getItem("ion_custom_logo") || "")
 
         const wasConnected = localStorage.getItem("jira_connected") === "true"
         if (wasConnected) setJiraConnected(true)
 
         fetchLogs()
+        fetchSmtpConfig()
     }, [])
+
+    const fetchSmtpConfig = async () => {
+        try {
+            const docRef = doc(db, "config", "smtp");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setSmtpHost(data.host || "");
+                setSmtpPort(data.port || "");
+                setSmtpUser(data.user || "");
+                setSmtpPassword(data.password || "");
+                setSmtpFromEmail(data.fromEmail || "");
+                setSmtpFromName(data.fromName || "");
+            }
+        } catch (e) {
+            console.error("Error fetching SMTP config:", e);
+        }
+    };
 
     const fetchLogs = async () => {
         try {
@@ -85,6 +124,14 @@ export function SettingsPage() {
         alert("Chave API Gemini salva com sucesso!")
     }
 
+    const handleSaveUI = () => {
+        localStorage.setItem("ion_auto_refresh_minutes", autoRefresh)
+        localStorage.setItem("ion_custom_logo", logoUrlInput)
+        window.dispatchEvent(new Event('ion-logo-change'))
+        alert("Configurações de Interface salvas! A página será atualizada.")
+        window.location.reload()
+    }
+
     const handleSync = async () => {
         setIsSyncing(true)
         setJiraConnected(null)
@@ -118,6 +165,48 @@ export function SettingsPage() {
         setIsSyncing(false)
     }
 
+    const handleSaveSmtp = async () => {
+        setIsSavingSmtp(true);
+        try {
+            await setDoc(doc(db, "config", "smtp"), {
+                host: smtpHost,
+                port: smtpPort,
+                user: smtpUser,
+                password: smtpPassword,
+                fromEmail: smtpFromEmail,
+                fromName: smtpFromName,
+                updatedAt: new Date()
+            });
+            alert("Configurações SMTP salvas com sucesso!");
+        } catch (error) {
+            console.error("Error saving SMTP config:", error);
+            alert("Erro ao salvar configurações SMTP.");
+        }
+        setIsSavingSmtp(false);
+    };
+
+    const handleTestSmtp = async () => {
+        if (!user?.email) {
+            alert("E-mail do usuário não encontrado.");
+            return;
+        }
+        setIsTestingSmtp(true);
+        try {
+            const sendEmail = httpsCallable(functions, 'sendEmail');
+            await sendEmail({
+                to: user.email,
+                subject: "Teste de Configuração SMTP - Ion Dashboard",
+                text: "Se você recebeu este e-mail, a configuração do seu servidor SMTP está funcionando corretamente.",
+                html: "<h1>Teste de Configuração SMTP</h1><p>Se você recebeu este e-mail, a configuração do seu servidor SMTP está funcionando corretamente.</p>"
+            });
+            alert(`E-mail de teste enviado com sucesso para ${user.email}!`);
+        } catch (error: any) {
+            console.error("Error testing SMTP:", error);
+            alert(`Erro ao testar SMTP: ${error.message}`);
+        }
+        setIsTestingSmtp(false);
+    };
+
     return (
         <div className="space-y-8 p-6 max-w-7xl mx-auto">
             <div className="flex flex-col gap-1">
@@ -128,6 +217,62 @@ export function SettingsPage() {
             </div>
 
             <div className="grid gap-8 grid-cols-1 lg:grid-cols-12">
+
+                {/* Admin User Management Panel */}
+                {user?.role === 'admin' && (
+                    <div className="lg:col-span-12">
+                        <UserManagementPanel />
+                    </div>
+                )}
+
+                {/* UI Preferences */}
+                <div className="lg:col-span-12">
+                    <Card className="border-cyan-100/60 dark:border-cyan-950/60 shadow-xl shadow-cyan-100/20 dark:shadow-none bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl">
+                        <CardHeader className="border-b border-cyan-100/30 dark:border-cyan-950/30 pb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                                    <LayoutTemplate className="h-5 w-5 text-cyan-600" />
+                                </div>
+                                <div>
+                                    <CardTitle className="text-xl">Configurações de Interface</CardTitle>
+                                    <CardDescription>Personalize a aparência e comportamento do dashboard.</CardDescription>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-2">
+                                <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Logo URL (Imagem)</Label>
+                                <Input
+                                    placeholder="https://exemplo.com/logo.png"
+                                    value={logoUrlInput}
+                                    onChange={e => setLogoUrlInput(e.target.value)}
+                                    className="h-11 bg-slate-50 border-slate-200"
+                                />
+                                <p className="text-[10px] text-slate-400">Deixe em branco para usar o logo padrão Ion.</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Atualização Automática (Minutos)</Label>
+                                <select
+                                    className="flex h-11 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus:ring-slate-800"
+                                    value={autoRefresh}
+                                    onChange={e => setAutoRefresh(e.target.value)}
+                                >
+                                    <option value="0">Desativado</option>
+                                    <option value="5">A cada 5 minutos</option>
+                                    <option value="10">A cada 10 minutos</option>
+                                    <option value="15">A cada 15 minutos</option>
+                                    <option value="30">A cada 30 minutos</option>
+                                    <option value="60">A cada 1 hora</option>
+                                </select>
+                            </div>
+                            <div className="md:col-span-2 flex justify-end">
+                                <Button onClick={handleSaveUI} className="bg-cyan-600 hover:bg-cyan-700 font-bold">
+                                    Salvar Interface
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
 
                 {/* Jira Connection - Left Side */}
                 <div className="lg:col-span-12 space-y-8">
@@ -345,6 +490,101 @@ export function SettingsPage() {
                         </CardContent>
                     </Card>
 
+                    <Card className="border-emerald-100/60 dark:border-emerald-950/60 shadow-xl shadow-emerald-100/20 dark:shadow-none bg-gradient-to-br from-white to-emerald-50/30 dark:from-slate-950 dark:to-emerald-950/10 backdrop-blur-xl">
+                        <CardHeader className="border-b border-emerald-100/30 dark:border-emerald-950/30">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                                        <Mail className="h-5 w-5 text-emerald-600" />
+                                    </div>
+                                    <div>
+                                        <CardTitle className="text-xl">Configuração SMTP (Firebase)</CardTitle>
+                                        <CardDescription>Configure o servidor para envio de relatórios e notificações.</CardDescription>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button
+                                        onClick={handleTestSmtp}
+                                        disabled={isTestingSmtp || !smtpHost}
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 gap-2 border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                                    >
+                                        {isTestingSmtp ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                                        Testar
+                                    </Button>
+                                    <Button
+                                        onClick={handleSaveSmtp}
+                                        disabled={isSavingSmtp}
+                                        size="sm"
+                                        className="h-8 bg-emerald-600 hover:bg-emerald-700"
+                                    >
+                                        {isSavingSmtp ? <Loader2 className="h-3 w-3 animate-spin" /> : "Salvar"}
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">Servidor SMTP</Label>
+                                    <Input
+                                        placeholder="smtp.exemplo.com"
+                                        value={smtpHost}
+                                        onChange={e => setSmtpHost(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">Porta</Label>
+                                    <Input
+                                        placeholder="587 ou 465"
+                                        value={smtpPort}
+                                        onChange={e => setSmtpPort(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">Usuário</Label>
+                                    <Input
+                                        placeholder="usuario@dominio.com"
+                                        value={smtpUser}
+                                        onChange={e => setSmtpUser(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">Senha</Label>
+                                    <Input
+                                        type="password"
+                                        placeholder="••••••••"
+                                        value={smtpPassword}
+                                        onChange={e => setSmtpPassword(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">E-mail de Remetente</Label>
+                                    <Input
+                                        placeholder="relatorios@dominio.com"
+                                        value={smtpFromEmail}
+                                        onChange={e => setSmtpFromEmail(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400">Nome do Remetente</Label>
+                                    <Input
+                                        placeholder="Ion Reports"
+                                        value={smtpFromName}
+                                        onChange={e => setSmtpFromName(e.target.value)}
+                                        className="h-9 bg-white/50 border-emerald-100/50"
+                                    />
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
                     <Card className="border-slate-800 bg-slate-950 text-slate-50 shadow-2xl relative overflow-hidden">
                         {/* Scanline effect */}
                         <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-1 bg-[length:100%_2px,3px_100%]" />
@@ -396,4 +636,3 @@ export function SettingsPage() {
         </div>
     )
 }
-
