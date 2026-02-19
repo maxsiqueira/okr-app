@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ResponsiveContainer, XAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar } from "recharts"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { Target, Zap, Cpu, TrendingUp, BarChart3, Sparkles, PieChart as PieIcon, Hourglass, RefreshCw, Users } from "lucide-react"
 import { StatCard } from "@/components/ui/stat-card"
 

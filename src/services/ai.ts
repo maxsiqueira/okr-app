@@ -69,6 +69,39 @@ export const AiService = {
         }
     },
 
+    clearGlobalAnalysis: async () => {
+        try {
+            const { getDocs, query, writeBatch } = await import("firebase/firestore");
+
+            // Function to delete all docs in a collection using batches
+            const deleteCollection = async (collectionName: string) => {
+                const q = query(collection(db, collectionName));
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) return;
+
+                const batch = writeBatch(db);
+                snapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                await batch.commit();
+                console.log(`Deleted ${snapshot.size} docs from ${collectionName}`);
+            };
+
+            console.log("Starting batch delete of AI records...");
+            await Promise.all([
+                deleteCollection("historico_gemini"),
+                deleteCollection("historico_ia")
+            ]);
+            console.log("Successfully deleted all AI analysis records.");
+
+        } catch (e) {
+            console.error("Erro ao remover análise global:", e);
+            throw e;
+        }
+    },
+
     /**
      * Sugere OKRs (Objetivos e Key Results) baseado em um contexto macro fornecido.
      * Retorna um JSON estruturado com sugestões que podem ser aprovadas pelo usuário.

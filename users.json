@@ -1,0 +1,73 @@
+{"users": [
+{
+  "localId": "0cnbwLuIDMaxSmYxbFU3P5hQrzJ2",
+  "email": "fred.veloso@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "vUPXAOirF9c3MfCNQuFXgHU9cdh4McGAjNXt5uQCL3qGEtuGltsiyvWSRkV33cGV2OtnkDAC+/Hakgrr3T5M2Q==",
+  "salt": "akFQZdUmhRIDkA==",
+  "lastSignedInAt": "1770397314411",
+  "createdAt": "1770000188490",
+  "disabled": false,
+  "providerUserInfo": []
+},
+{
+  "localId": "4YdVi7zscpd426z0xf96NcoHSM73",
+  "email": "ederliudor@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "8HK2GZg//5swui48+JzJLVDqg70i+JkTE1Os2U6hZ5LpFJIKcesQTNtWwJs2dEH4zO5aooZbW7Qo4EjIpFskkA==",
+  "salt": "q7ibUx1O4gr7RQ==",
+  "lastSignedInAt": "1770228515240",
+  "createdAt": "1770228368491",
+  "providerUserInfo": []
+},
+{
+  "localId": "N7Jj5AWYvYbqhwHtTCebYCcyI7V2",
+  "email": "wax.sena@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "s5pOgv5AaCxXDYFE1VKEhJswH/t34W3M40X/L9NDZkE4f35is9de0s7U2UL9jkB/DntGkC+YAeaiqVryDR+LfQ==",
+  "salt": "fNU+4ncachxUcQ==",
+  "lastSignedInAt": "1770209180952",
+  "createdAt": "1770207801181",
+  "providerUserInfo": []
+},
+{
+  "localId": "VaMAuoyDEZUBUHSGCeBeZsOEZ3y1",
+  "email": "bernardo.castro@ionsistemas.com.br",
+  "emailVerified": false,
+  "passwordHash": "Ln+ZS0exDrGbWdP6AaaimXOgOkxzoh2NnY8QkzfZcNr9pgUooR/GVNlReKlmevcvuT338Zdh3GvEkveNXCVBoQ==",
+  "salt": "Jmw1/dcjQYweAA==",
+  "lastSignedInAt": "1770907543181",
+  "createdAt": "1770907543181",
+  "providerUserInfo": []
+},
+{
+  "localId": "awtCGDBGNMWSQUceJh2wGQ54ui63",
+  "email": "services@ionsistemas.com.br",
+  "emailVerified": false,
+  "passwordHash": "fhIsPcg03qunzZZ0oskl5qOXxZ6vwib5sm3dZ4R5LNZ2B05xQSDRHVJeTtKiY3kovTZY1OE/dCI+J7OYaatOWg==",
+  "salt": "RQgctIFyleSH4A==",
+  "lastSignedInAt": "1769798651461",
+  "createdAt": "1769798515571",
+  "providerUserInfo": []
+},
+{
+  "localId": "cSEl5svCmoZFVyRfwBmsiyX3Ew13",
+  "email": "cleyton.fantini@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "spZzniMusIoMFjCNqyYkim6z1uT/lbLXk0Jr6wONmvRk+HOm/vgntzgr4Pmatrw1gWZzJ68EEjKaRoRVIDLvTg==",
+  "salt": "tE8STovHvJz/Hg==",
+  "lastSignedInAt": "1770211033579",
+  "createdAt": "1770210899820",
+  "providerUserInfo": []
+},
+{
+  "localId": "wyqw6XbcJJWxOOS3U2oeDmNZuEH3",
+  "email": "max.sena@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "6+KwW2RpeT/l8prYz4mgIP4uoSXwzVIaD1xg2uQ5qaLT0UABdZLMl0AJUlDI8kwg8F2LH999UjTjYSP6CaMzIQ==",
+  "salt": "h819qjTkOkF4KA==",
+  "lastSignedInAt": "1770397356921",
+  "createdAt": "1769790181554",
+  "disabled": false,
+  "providerUserInfo": []
+}]}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Bug, X, ChevronDown, ChevronUp, Clock, Activity } from "lucide-react"
-import { debugLogs } from "@/services/jira"
+import { debugLogs } from "@/services/jira-client"
 
 export function DebugOverlay() {
     const [isOpen, setIsOpen] = useState(false)

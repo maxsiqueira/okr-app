@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
 import { Link } from "react-router-dom"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Sparkles, Rocket, Target, Zap, LayoutDashboard, AlertTriangle } from "lucide-react"
-import { AiService } from "@/services/ai"
+import { Search, Rocket, Target, Zap, LayoutDashboard, AlertTriangle } from "lucide-react"
+import { db } from "@/lib/firebase"
+import { collection, query, onSnapshot, doc } from "firebase/firestore"
+import { useTranslation } from "react-i18next"
 import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { useTranslation } from "react-i18next"
+import { AiInsightsSection } from "@/components/analytics/AiInsightsSection"
+import { useSettings } from "@/contexts/SettingsContext"
+import { useAuth } from "@/contexts/AuthContext"
 
 const TubularBar = (props: any) => {
     const { fill, x, y, width, height, index } = props;
@@ -79,44 +83,118 @@ export function StrategicDashboard() {
     const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
     const [strategicObjectives, setStrategicObjectives] = useState<any[]>([])
     const [manualOkrs, setManualOkrs] = useState<any[]>([])
+    const [systemConfig, setSystemConfig] = useState<any>(null)
+
+    const { settings, updateDashboardSettings } = useSettings()
+    const { user } = useAuth()
 
     useEffect(() => {
-        const savedProjectKey = localStorage.getItem("jira_project_key") || "ION"
+        // Priority: Settings (Firestore) > LocalStorage > Default
+        const savedProjectKey = settings?.dashboard?.projectKey || localStorage.getItem("jira_project_key") || "ION"
+        const savedVersion = settings?.dashboard?.selectedVersion || "ALL"
+
         setProjectKey(savedProjectKey)
-        loadData(savedProjectKey, selectedVersion)
-        loadManualContext()
-    }, [selectedVersion])
+        setSelectedVersion(savedVersion)
+
+        // Listen to system config changes
+        const unsubscribeConfig = onSnapshot(doc(db, "system_config", "jira"), (snapshot) => {
+            if (snapshot.exists()) {
+                setSystemConfig(snapshot.data())
+            }
+        })
+
+        const unsubscribeObjectives = loadManualContext()
+        return () => {
+            if (typeof unsubscribeObjectives === 'function') unsubscribeObjectives()
+            unsubscribeConfig()
+        }
+    }, [])
+
+    // Reload data when systemConfig or selectedVersion changes
+    useEffect(() => {
+        // Only load if we have a project key (initialized)
+        if (projectKey) {
+            loadData(projectKey, selectedVersion)
+        }
+    }, [systemConfig, selectedVersion, projectKey, user])
 
     const loadManualContext = () => {
-        const savedObjs = localStorage.getItem("strategic_objectives")
+        // Legacy manual OKRs could stay in localStorage for now if needed, 
+        // but Strategic Objectives MUST come from Firestore
+        const unsubscribe = onSnapshot(query(collection(db, "strategic_objectives")), (snapshot) => {
+            const objs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            setStrategicObjectives(objs)
+        })
+
         const savedOkrs = localStorage.getItem("manual_okrs")
-        if (savedObjs) setStrategicObjectives(JSON.parse(savedObjs))
         if (savedOkrs) setManualOkrs(JSON.parse(savedOkrs))
+
+        return unsubscribe
     }
 
     const loadData = async (project: string, version: string = "ALL") => {
         setLoading(true)
         setError(null)
         try {
-            // Check for specific lists first
-            const okrIds = (localStorage.getItem("okr_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
-            const extraIds = (localStorage.getItem("extra_epics") || "").split(",").map(s => s.trim()).filter(Boolean)
+            // Helper to safe parse keys from various sources (string, array, null)
+            const parseKeys = (val: any): string[] => {
+                if (!val) return []
+                if (Array.isArray(val)) return val
+                if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean)
+                return []
+            }
+
+            // --- DATA LOADING STRATEGY (Waterfall) ---
+            // 1. Try User Specific Configuration
+            // 2. Try System/Admin Configuration
+            // 3. Fallback to Project Scan (All Epics)
 
             let fetchedOkr: JiraIssue[] = []
             let fetchedExtra: JiraIssue[] = []
             let fetchedAll: JiraIssue[] = []
 
-            if (okrIds.length > 0 || extraIds.length > 0) {
-                // Configured Mode
+            // 1. User Profile Config
+            const userOkrIds = parseKeys(user?.okrEpics)
+            const userExtraIds = parseKeys(user?.extraEpics)
+
+            if (userOkrIds.length > 0 || userExtraIds.length > 0) {
+                console.log(`[Dashboard] Trying User Config:`, { okr: userOkrIds, extra: userExtraIds })
                 const [okrData, extraData] = await Promise.all([
-                    JiraService.getEpicsByKeys(okrIds, version),
-                    JiraService.getEpicsByKeys(extraIds, version)
+                    JiraService.getEpicsByKeys(userOkrIds, version),
+                    JiraService.getEpicsByKeys(userExtraIds, version)
                 ])
-                fetchedOkr = okrData
-                fetchedExtra = extraData
-                fetchedAll = [...okrData, ...extraData]
-            } else {
+                if (okrData.length > 0 || extraData.length > 0) {
+                    fetchedOkr = okrData
+                    fetchedExtra = extraData
+                    fetchedAll = [...okrData, ...extraData]
+                } else {
+                    console.warn(`[Dashboard] User Config yielded no results. Falling back...`)
+                }
+            }
+
+            // 2. System/Admin Config (if User Config failed/empty)
+            if (fetchedAll.length === 0) {
+                const sysOkrIds = parseKeys(systemConfig?.okr_epic_keys || localStorage.getItem("okr_epics"))
+                const sysExtraIds = parseKeys(systemConfig?.extra_epic_keys || localStorage.getItem("extra_epics"))
+
+                if (sysOkrIds.length > 0 || sysExtraIds.length > 0) {
+                    console.log(`[Dashboard] Trying System/Local Config:`, { okr: sysOkrIds, extra: sysExtraIds })
+                    const [okrData, extraData] = await Promise.all([
+                        JiraService.getEpicsByKeys(sysOkrIds, version),
+                        JiraService.getEpicsByKeys(sysExtraIds, version)
+                    ])
+                    if (okrData.length > 0 || extraData.length > 0) {
+                        fetchedOkr = okrData
+                        fetchedExtra = extraData
+                        fetchedAll = [...okrData, ...extraData]
+                    }
+                }
+            }
+
+            // Fallback: If configured mode yielded nothing (stale config) OR no config exists
+            if (fetchedAll.length === 0) {
                 // Default Mode (Project Scan)
+                console.log(`[Dashboard] No specific epics found (or not configured). Scanning project ${project}...`)
                 fetchedAll = await JiraService.getEpics(project, version)
                 fetchedOkr = fetchedAll
                 fetchedExtra = []
@@ -127,8 +205,12 @@ export function StrategicDashboard() {
             setAllEpics(fetchedAll)
 
             if (fetchedAll.length === 0) {
-                if (okrIds.length > 0 || extraIds.length > 0) {
-                    setError(`As chaves configuradas (OKR/Extra) não foram encontradas. Verifique se os IDs estão corretos nas Configurações.`)
+                // Determine what went wrong for the error message
+                const userConfigured = userOkrIds.length > 0 || userExtraIds.length > 0
+                const sysConfigured = (systemConfig?.okr_epic_keys || []).length > 0 || (systemConfig?.extra_epic_keys || []).length > 0
+
+                if (userConfigured || sysConfigured) {
+                    setError(`Não foi possível carregar os Epics configurados (${userConfigured ? 'Perfil Usuário' : 'Sistema'}). Verifique as permissões no Jira ou as chaves configuradas.`)
                 } else if (!project) {
                     setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
                 } else {
@@ -152,17 +234,23 @@ export function StrategicDashboard() {
                 await calculateQuarterlyMetrics(fetchedOkr)
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err)
-            setError(`Failed to load epics. Check your credentials.`)
+            setError(err.message || `Failed to load epics. Check your credentials.`)
         }
         setLoading(false)
     }
 
     const handleProjectChange = (newKey: string) => {
         setProjectKey(newKey)
-        localStorage.setItem("jira_project_key", newKey)
-        loadData(newKey, selectedVersion)
+        // Persist to settings
+        updateDashboardSettings({ projectKey: newKey })
+    }
+
+    const handleVersionChange = (newVersion: string) => {
+        setSelectedVersion(newVersion)
+        // Persist to settings
+        updateDashboardSettings({ selectedVersion: newVersion })
     }
 
     const calculateQuarterlyMetrics = async (epics: JiraIssue[]) => {
@@ -229,11 +317,33 @@ export function StrategicDashboard() {
         ])
     }
 
-    // Calculate Metrics (Combined)
+    // Calculate Metrics (Refining with Strategic Objectives logic)
     const activeEpics = allEpics.filter(e => !e.fields.status.name.toLowerCase().includes("cancel"))
+
+    // Calculate global progress based on Strategic Objectives if they exist
+    const objectivesForCalc = strategicObjectives.filter(o => !o.excludeFromCalculation)
+
+    let progressPercent = 0
+    if (objectivesForCalc.length > 0) {
+        // Use the refined calculation logic
+        const totalSum = objectivesForCalc.reduce((acc, obj) => {
+            const progSum = (obj.epicKeys || []).reduce((eAcc: number, eKey: string) => {
+                const epic = activeEpics.find(e => e.key === eKey)
+                return eAcc + (epic?.progress || 0)
+            }, 0)
+            const jiraProg = (obj.epicKeys || []).length > 0 ? (progSum / obj.epicKeys.length) : 0
+            const actualProg = obj.suggestedProgress != null ? obj.suggestedProgress : jiraProg
+            return acc + actualProg
+        }, 0)
+        progressPercent = Math.round(totalSum / objectivesForCalc.length)
+    } else {
+        // Fallback to standard Jira calc
+        const totalInitiatives = activeEpics.length
+        const totalProgress = activeEpics.reduce((acc, e) => acc + (e.progress ?? 0), 0)
+        progressPercent = totalInitiatives > 0 ? Math.round(totalProgress / totalInitiatives) : 0
+    }
+
     const totalInitiatives = activeEpics.length
-    const totalProgress = activeEpics.reduce((acc, e) => acc + (e.progress ?? 0), 0)
-    const progressPercent = totalInitiatives > 0 ? Math.round(totalProgress / totalInitiatives) : 0
 
     const EpicList = ({ title, list }: { title: string, list: JiraIssue[] }) => (
         <div className="space-y-4 mb-8">
@@ -289,7 +399,7 @@ export function StrategicDashboard() {
                     <select
                         className="p-1.5 border rounded bg-background text-sm font-medium"
                         value={selectedVersion}
-                        onChange={(e) => setSelectedVersion(e.target.value)}
+                        onChange={(e) => handleVersionChange(e.target.value)}
                     >
                         <option value="ALL">All Versions</option>
                         {allVersions.map(v => (
@@ -405,74 +515,5 @@ export function StrategicDashboard() {
                 )}
             </div>
         </div>
-    )
-}
-
-function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: JiraIssue[], strategicObjectives: any[], manualOkrs: any[] }) {
-    const [insight, setInsight] = useState<string | null>(null)
-    const [loading, setLoading] = useState(false)
-
-    const handleGenerate = async () => {
-        setLoading(true)
-        const result = await AiService.generateInsights({
-            epics,
-            strategicObjectives,
-            manualOkrs
-        })
-        setInsight(result)
-        setLoading(false)
-    }
-
-    return (
-        <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-indigo-100 dark:border-indigo-900">
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-2 space-y-2 sm:space-y-0">
-                <div className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-                        <Sparkles className="h-5 w-5" /> AI Analyst
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                        Get strategic insights powered by Gemini 1.5 Flash.
-                    </p>
-                </div>
-                {!insight && (
-                    <Button
-                        onClick={handleGenerate}
-                        disabled={loading || epics.length === 0}
-                        size="sm"
-                        className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-auto"
-                    >
-                        {loading ? "Analyzing..." : "Generate Insights"}
-                    </Button>
-                )}
-            </CardHeader>
-            {insight && (
-                <CardContent>
-                    <div className="prose dark:prose-invert text-sm max-w-none overflow-x-auto break-words">
-                        {insight.split('\n').map((line, i) => {
-                            if (!line.trim()) return <div key={i} className="h-2" />
-
-                            // Handle Bold (**text**)
-                            const parts = line.split(/(\*\*.*?\*\*)/g)
-                            const content = parts.map((part, j) => {
-                                if (part.startsWith('**') && part.endsWith('**')) {
-                                    return <strong key={j}>{part.slice(2, -2)}</strong>
-                                }
-                                return part
-                            })
-
-                            if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
-                                return <p key={i} className="pl-4 mb-1 flex items-start gap-2"><span>•</span><span className="flex-1">{content}</span></p>
-                            }
-
-                            if (line.match(/^\d\./)) {
-                                return <p key={i} className="font-bold text-base mt-4 mb-2 text-indigo-800 dark:text-indigo-400 border-b border-indigo-100 dark:border-indigo-900 pb-1">{content}</p>
-                            }
-
-                            return <p key={i} className="mb-2 leading-relaxed">{content}</p>
-                        })}
-                    </div>
-                </CardContent>
-            )}
-        </Card>
     )
 }

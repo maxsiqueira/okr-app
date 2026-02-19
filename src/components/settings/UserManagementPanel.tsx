@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
     Table,
     TableBody,
@@ -14,9 +15,10 @@ import {
 } from "@/components/ui/table";
 import { Users, Plus, Loader2, Pencil, Mail, Trash2, Ban } from "lucide-react";
 import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
-import { db, app, auth } from "@/lib/firebase";
+import { db, app, auth, functions } from "@/lib/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 import { AppUser } from "@/types/user";
 
 // Define all available panels for permissions
@@ -43,6 +45,7 @@ export function UserManagementPanel() {
         displayName: '',
         email: '',
         password: '',
+        newPassword: '',
         role: 'user' as 'admin' | 'user',
         allowedPanels: [] as string[],
         isBlocked: false
@@ -54,8 +57,13 @@ export function UserManagementPanel() {
             const querySnapshot = await getDocs(collection(db, "users"));
             const usersData: AppUser[] = [];
             querySnapshot.forEach((doc) => {
-                usersData.push(doc.data() as AppUser);
+                const data = doc.data() as AppUser;
+                usersData.push(data);
+                if (data.email?.includes('bernardo')) {
+                    console.log("[DEBUG] Bernardo Data:", data);
+                }
             });
+            console.log("[DEBUG] All Users Fetched:", usersData);
             setUsers(usersData);
         } catch (error) {
             console.error("Error fetching users:", error);
@@ -70,7 +78,7 @@ export function UserManagementPanel() {
 
     const openCreateModal = () => {
         setEditingUserId(null);
-        setUserData({ displayName: '', email: '', password: '', role: 'user', allowedPanels: [], isBlocked: false });
+        setUserData({ displayName: '', email: '', password: '', newPassword: '', role: 'user', allowedPanels: [], isBlocked: false });
         setShowModal(true);
     };
 
@@ -80,6 +88,7 @@ export function UserManagementPanel() {
             displayName: user.displayName || '',
             email: user.email || '',
             password: '',
+            newPassword: '',
             role: user.role,
             allowedPanels: user.allowedPanels || [],
             isBlocked: user.isBlocked || false
@@ -100,6 +109,35 @@ export function UserManagementPanel() {
                     allowedPanels: userData.role === 'admin' ? [] : userData.allowedPanels,
                     isBlocked: userData.isBlocked
                 });
+
+                console.log("[UserManagement] User updated:", {
+                    uid: editingUserId,
+                    email: userData.email,
+                    role: userData.role,
+                    allowedPanels: userData.role === 'admin' ? [] : userData.allowedPanels
+                });
+
+
+                // SE TIVER NOVA SENHA, CHAMA A CLOUD FUNCTION
+                if (userData.newPassword && userData.newPassword.trim().length >= 6) {
+                    try {
+                        const updateUserPassword = httpsCallable(functions, 'updateUserPassword');
+                        await updateUserPassword({
+                            targetUid: editingUserId,
+                            newPassword: userData.newPassword.trim()
+                        });
+                        console.log("Senha do usuário atualizada com sucesso via Cloud Function.");
+                    } catch (passwordError: any) {
+                        console.error("Erro ao atualizar senha via Cloud Function:", passwordError);
+
+                        let customMsg = "Houve um erro técnico. ";
+                        if (passwordError.message.includes("internal") || passwordError.message.includes("not-found")) {
+                            customMsg = "Esta funcionalidade requer o plano 'Blaze' do Firebase para ativar as Cloud Functions. ";
+                        }
+
+                        alert(`Usuário atualizado, mas ${customMsg}\n\nRecomendação: Use o ícone de 'E-mail' ao lado do endereço do usuário para enviar um link de redefinição de senha.`);
+                    }
+                }
                 alert("Usuário atualizado com sucesso!");
             } else {
                 // CREATE NEW USER
@@ -128,8 +166,30 @@ export function UserManagementPanel() {
                 }
             }
 
+            // OPTIMISTIC UPDATE / LOCAL STATE UPDATE
+            const updatedUser: AppUser = {
+                uid: editingUserId || 'unknown',
+                email: userData.email,
+                displayName: userData.displayName,
+                role: userData.role,
+                allowedPanels: userData.role === 'admin' ? [] : userData.allowedPanels,
+                isBlocked: userData.isBlocked,
+                // Preserve other fields if editing
+                ...(editingUserId ? users.find(u => u.uid === editingUserId) : {})
+            } as AppUser;
+
+            if (editingUserId) {
+                setUsers(prev => prev.map(u => u.uid === editingUserId ? { ...u, ...updatedUser } : u));
+            } else {
+                // For new users, we might need to wait for fetchUsers to get the real UID/timestamp, 
+                // but we can add a placeholder or just rely on fetchUsers.
+                // Given the issue is about EDITING, the above map update fixes the "reflection" issue.
+            }
+
             setShowModal(false);
-            fetchUsers();
+
+            // Still fetch to ensure consistency, but allow UI to show change immediately
+            setTimeout(() => fetchUsers(), 1000);
         } catch (error: any) {
             console.error("Error saving user:", error);
             alert("Erro ao salvar: " + error.message);
@@ -292,10 +352,30 @@ export function UserManagementPanel() {
                                         {editingUserId && <p className="text-[10px] text-slate-500">O e-mail não pode ser alterado. Use o botão ao lado para redefinir a senha.</p>}
                                     </div>
 
-                                    {!editingUserId && (
+                                    {!editingUserId ? (
                                         <div className="space-y-2">
                                             <Label>Senha Inicial</Label>
                                             <Input type="password" required minLength={6} value={userData.password} onChange={e => setUserData({ ...userData, password: e.target.value })} />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <Label className="text-blue-600 font-bold flex items-center gap-1">
+                                                Definir Nova Senha (Manual)
+                                                <Badge variant="outline" className="text-[8px] bg-blue-50 text-blue-600 border-blue-200 uppercase">Requer Plano Blaze</Badge>
+                                            </Label>
+                                            <Input
+                                                type="password"
+                                                placeholder="Deixe vazio para manter a atual"
+                                                minLength={6}
+                                                value={userData.newPassword}
+                                                onChange={e => setUserData({ ...userData, newPassword: e.target.value })}
+                                                className="border-blue-200 focus:ring-blue-500"
+                                            />
+                                            <div className="p-2 bg-amber-50 border border-amber-100 rounded-lg">
+                                                <p className="text-[10px] text-amber-700 leading-tight">
+                                                    <strong>Importante:</strong> Para salvar esta senha, seu Firebase deve estar no plano <strong>Blaze</strong>. Caso contrário, use o ícone de e-mail ao lado para enviar um link de redefinição.
+                                                </p>
+                                            </div>
                                         </div>
                                     )}
 

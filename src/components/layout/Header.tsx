@@ -61,6 +61,16 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                         <Menu className="h-5 w-5" />
                     </Button>
 
+                    {/* Ion Dashboard Logo/Brand */}
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-gradient-realestate-blue rounded-lg flex items-center justify-center">
+                            <span className="text-white font-black text-sm">ION</span>
+                        </div>
+                        <span className="hidden sm:inline font-black text-slate-800 dark:text-white">
+                            Ion <span className="text-realestate-primary-500">Dashboard</span>
+                        </span>
+                    </div>
+
                     {/* Search Bar */}
                     <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
                         <div className="relative w-full">

@@ -1,18 +1,22 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { Loader2, RefreshCw, Terminal, CheckCircle2, AlertCircle, ShieldCheck, Database, Zap, Cpu, LayoutTemplate, Mail, Send } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { UserManagementPanel } from "@/components/settings/UserManagementPanel"
+import { AccountSecurityPanel } from "@/components/settings/AccountSecurityPanel"
+import { JiraSystemConfig } from "@/components/settings/JiraSystemConfig"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSettings } from "@/contexts/SettingsContext"
 import { db, functions } from "@/lib/firebase"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { httpsCallable } from "firebase/functions"
 
 export function SettingsPage() {
     const { user } = useAuth();
+    const { updateJiraSettings, updateEpicAnalysisSettings } = useSettings();
     const [isSyncing, setIsSyncing] = useState(false)
     const [lastSynced, setLastSynced] = useState<string>("Never")
 
@@ -28,6 +32,8 @@ export function SettingsPage() {
     const [geminiKey, setGeminiKey] = useState("")
     const [autoRefresh, setAutoRefresh] = useState("0")
     const [logoUrlInput, setLogoUrlInput] = useState("")
+    const [loginLogoInput, setLoginLogoInput] = useState("")
+    const [enableAi, setEnableAi] = useState(true)
 
     // Status State
     const [jiraConnected, setJiraConnected] = useState<boolean | null>(null)
@@ -44,25 +50,47 @@ export function SettingsPage() {
     const [isTestingSmtp, setIsTestingSmtp] = useState(false)
 
     useEffect(() => {
-        setJiraUrl(localStorage.getItem("jira_url") || "")
-        setJiraEmail(localStorage.getItem("jira_email") || "")
-        setJiraToken(localStorage.getItem("jira_token") || "")
-        setProxyUrl(localStorage.getItem("proxy_url") || "/api/proxy")
-        setOkrEpics(localStorage.getItem("okr_epics") || "")
-        setExtraEpics(localStorage.getItem("extra_epics") || "")
-        setDefaultEpicKey(localStorage.getItem("default_epic_key") || "")
-        setGeminiKey(localStorage.getItem("gemini_api_key") || "")
-        setDebugMode(localStorage.getItem("debug_mode") === "true")
+        // Migration Strategy: 
+        // 1. Prefer Cloud Data (user object)
+        // 2. Fallback to LocalStorage (legacy)
+
+        if (user) {
+            setJiraUrl(user.jiraUrl || localStorage.getItem("jira_url") || "")
+            setJiraEmail(user.jiraEmail || localStorage.getItem("jira_email") || "")
+            setJiraToken(user.jiraToken || localStorage.getItem("jira_token") || "")
+            setProxyUrl(user.proxyUrl || localStorage.getItem("proxy_url") || "/api/proxy")
+            setOkrEpics(user.okrEpics || localStorage.getItem("okr_epics") || "")
+            setExtraEpics(user.extraEpics || localStorage.getItem("extra_epics") || "")
+            setDefaultEpicKey(user.defaultEpicKey || localStorage.getItem("default_epic_key") || "")
+            setGeminiKey(user.geminiApiKey || localStorage.getItem("gemini_api_key") || "")
+            setDebugMode(user.debugMode !== undefined ? user.debugMode : (localStorage.getItem("debug_mode") === "true"))
+            setAutoRefresh(user.autoRefresh || localStorage.getItem("ion_auto_refresh_minutes") || "0")
+            setLogoUrlInput(user.customLogo || localStorage.getItem("ion_custom_logo") || "")
+        } else {
+            // Fallback if user context not ready (shouldn't happen due to protection)
+            setJiraUrl(localStorage.getItem("jira_url") || "")
+            setJiraEmail(localStorage.getItem("jira_email") || "")
+            setJiraToken(localStorage.getItem("jira_token") || "")
+            setProxyUrl(localStorage.getItem("proxy_url") || "/api/proxy")
+            setOkrEpics(localStorage.getItem("okr_epics") || "")
+            setExtraEpics(localStorage.getItem("extra_epics") || "")
+            setDefaultEpicKey(localStorage.getItem("default_epic_key") || "")
+            setGeminiKey(localStorage.getItem("gemini_api_key") || "")
+            setDebugMode(localStorage.getItem("debug_mode") === "true")
+            setAutoRefresh(localStorage.getItem("ion_auto_refresh_minutes") || "0")
+            setLogoUrlInput(localStorage.getItem("ion_custom_logo") || "")
+        }
+
         setLastSynced(localStorage.getItem("last_synced_time") || "Never")
-        setAutoRefresh(localStorage.getItem("ion_auto_refresh_minutes") || "0")
-        setLogoUrlInput(localStorage.getItem("ion_custom_logo") || "")
+        setLoginLogoInput(localStorage.getItem("ion_login_logo") || "")
+        setEnableAi(localStorage.getItem("ion_enable_ai") !== "false")
 
         const wasConnected = localStorage.getItem("jira_connected") === "true"
         if (wasConnected) setJiraConnected(true)
 
         fetchLogs()
         fetchSmtpConfig()
-    }, [])
+    }, [user])
 
     const fetchSmtpConfig = async () => {
         try {
@@ -102,7 +130,8 @@ export function SettingsPage() {
         }
     }
 
-    const handleSaveCreds = () => {
+    const handleSaveCreds = async () => {
+        // 1. Save Local
         localStorage.setItem("jira_url", jiraUrl)
         localStorage.setItem("jira_email", jiraEmail)
         localStorage.setItem("jira_token", jiraToken)
@@ -112,35 +141,100 @@ export function SettingsPage() {
         localStorage.setItem("default_epic_key", defaultEpicKey)
         localStorage.setItem("debug_mode", debugMode ? "true" : "false")
 
+        // 2. Save Cloud (Firestore - both collections for compatibility)
+        if (user?.uid) {
+            try {
+                // Save to users collection (existing)
+                await setDoc(doc(db, "users", user.uid), {
+                    jiraUrl,
+                    jiraEmail,
+                    jiraToken,
+                    proxyUrl,
+                    okrEpics,
+                    extraEpics,
+                    defaultEpicKey,
+                    debugMode
+                }, { merge: true });
+
+                // ALSO save to user_settings collection (new)
+                await updateJiraSettings({
+                    url: jiraUrl,
+                    email: jiraEmail,
+                    token: jiraToken
+                }).catch(err => console.error("Failed to sync to user_settings", err));
+
+                await updateEpicAnalysisSettings({
+                    defaultEpicKey,
+                    extraEpics: extraEpics.split(',').map(k => k.trim()).filter(k => k)
+                }).catch(err => console.error("Failed to sync epic settings", err));
+
+                console.log("Settings synced to cloud.");
+            } catch (e) {
+                console.error("Failed to sync settings to cloud", e);
+            }
+        }
+
         // Reset connection status on save
         setJiraConnected(null)
         localStorage.removeItem("jira_connected")
 
-        alert("Configurações do Jira salvas!")
+        alert("Configurações do Jira salvas (Local & Cloud)!")
     }
 
-    const handleSaveAiCreds = () => {
+    const handleSaveAiCreds = async () => {
         localStorage.setItem("gemini_api_key", geminiKey)
-        alert("Chave API Gemini salva com sucesso!")
+
+        if (user?.uid) {
+            try {
+                await setDoc(doc(db, "users", user.uid), {
+                    geminiApiKey: geminiKey
+                }, { merge: true });
+            } catch (e) {
+                console.error("Failed to sync API Key to cloud", e);
+            }
+        }
+
+        alert("Chave API Gemini salva com sucesso (Local & Cloud)!")
     }
 
-    const handleSaveUI = () => {
+    const handleSaveUI = async () => {
         localStorage.setItem("ion_auto_refresh_minutes", autoRefresh)
         localStorage.setItem("ion_custom_logo", logoUrlInput)
+        localStorage.setItem("ion_login_logo", loginLogoInput)
+        localStorage.setItem("ion_enable_ai", enableAi ? "true" : "false")
+
+        if (user?.uid) {
+            try {
+                await setDoc(doc(db, "users", user.uid), {
+                    autoRefresh,
+                    customLogo: logoUrlInput,
+                    // Login logo and global AI toggle might be considered "Device specific" or "Global"?
+                    // For now let's persist what makes sense for the user profile
+                }, { merge: true });
+            } catch (e) {
+                console.error("Failed to sync UI settings to cloud", e);
+            }
+        }
+
         window.dispatchEvent(new Event('ion-logo-change'))
+        window.dispatchEvent(new Event('ion-config-change'))
         alert("Configurações de Interface salvas!")
-        // Removed window.location.reload() to allow the event to propagate instead
     }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, target: 'system' | 'login') => {
         const file = e.target.files?.[0]
         if (!file) return
 
         const reader = new FileReader()
         reader.onloadend = () => {
             const base64String = reader.result as string
-            setLogoUrlInput(base64String)
-            localStorage.setItem("ion_custom_logo", base64String)
+            if (target === 'system') {
+                setLogoUrlInput(base64String)
+                localStorage.setItem("ion_custom_logo", base64String)
+            } else {
+                setLoginLogoInput(base64String)
+                localStorage.setItem("ion_login_logo", base64String)
+            }
             window.dispatchEvent(new Event('ion-logo-change'))
         }
         reader.readAsDataURL(file)
@@ -150,31 +244,38 @@ export function SettingsPage() {
         setIsSyncing(true)
         setJiraConnected(null)
         try {
-            // 1. Validar se o PROXY está vivo (Silencioso para bypass)
-            const currentProxy = localStorage.getItem("proxy_url") || "/api/proxy";
-            if (currentProxy.startsWith('http')) {
-                const healthEndpoint = `${currentProxy.replace(/\/$/, "")}/health`;
-                try {
-                    await fetch(healthEndpoint, {
-                        headers: { 'bypass-tunnel-reminder': 'true' }
-                    });
-                } catch (e) {
-                    console.warn("Proxy Health Check failed, attempting direct sync anyway...");
+            // 1. SAVE CREDENTIALS FIRST so backend has latest data
+            await handleSaveCreds()
+
+            // 2. Derive Project Key to test
+            let projectKey = 'ION';
+            if (defaultEpicKey && defaultEpicKey.includes('-')) {
+                projectKey = defaultEpicKey.split('-')[0];
+            } else if (okrEpics && okrEpics.length > 0) {
+                const firstKey = okrEpics.split(',')[0].trim();
+                if (firstKey.includes('-')) {
+                    projectKey = firstKey.split('-')[0];
                 }
             }
 
-            // 2. Prosseguir com o Sync do Jira
-            await JiraService.syncJiraData()
+            console.log(`[Settings] Testing connection with Project Key: ${projectKey}`);
+
+            // 3. Real Backend Fetch (Force Refresh)
+            await JiraService.getEpics(projectKey, "ALL", true)
+
             const now = new Date().toLocaleString()
             setLastSynced(now)
             localStorage.setItem("last_synced_time", now)
             setJiraConnected(true)
             localStorage.setItem("jira_connected", "true")
             fetchLogs()
+            alert("Conexão com Jira estabelecida com sucesso!")
+
         } catch (error: any) {
             setJiraConnected(false)
             localStorage.setItem("jira_connected", "false")
             console.error("Sync Error:", error)
+            alert(`Falha na conexão: ${error.message}`)
         }
         setIsSyncing(false)
     }
@@ -239,6 +340,13 @@ export function SettingsPage() {
                     </div>
                 )}
 
+                {/* Admin Jira System Configuration */}
+                {user?.role === 'admin' && (
+                    <div className="lg:col-span-12">
+                        <JiraSystemConfig />
+                    </div>
+                )}
+
                 {/* UI Preferences */}
                 <div className="lg:col-span-12">
                     <Card className="border-cyan-100/60 dark:border-cyan-950/60 shadow-xl shadow-cyan-100/20 dark:shadow-none bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl">
@@ -270,7 +378,7 @@ export function SettingsPage() {
                                         <Input
                                             type="file"
                                             accept="image/*"
-                                            onChange={handleFileChange}
+                                            onChange={e => handleFileChange(e, 'system')}
                                             className="absolute inset-0 opacity-0 cursor-pointer z-10"
                                         />
                                         <div className="flex items-center justify-center w-10 h-10 rounded-full bg-cyan-100 text-cyan-600 group-hover:bg-cyan-200 transition-colors">
@@ -283,6 +391,36 @@ export function SettingsPage() {
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-slate-400">Deixe em branco para usar o logo padrão Ion.</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Logo de Abertura (Login)</Label>
+                                    <Input
+                                        placeholder="https://exemplo.com/splash.png"
+                                        value={loginLogoInput}
+                                        onChange={e => setLoginLogoInput(e.target.value)}
+                                        className="h-11 bg-slate-50 border-slate-200"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Ou Carregar Localmente</Label>
+                                    <div className="flex items-center gap-4 p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer group relative">
+                                        <Input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={e => handleFileChange(e, 'login')}
+                                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                        />
+                                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200 transition-colors">
+                                            <LayoutTemplate className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-700">Logo de Login</p>
+                                            <p className="text-[10px] text-slate-400">Clique para selecionar</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Atualização Automática (Minutos)</Label>
@@ -299,6 +437,22 @@ export function SettingsPage() {
                                     <option value="60">A cada 1 hora</option>
                                 </select>
                             </div>
+                            <div className="space-y-2">
+                                <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Configurações de IA</Label>
+                                <div className="flex items-center gap-3 p-3 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100/50 dark:border-indigo-900/20">
+                                    <input
+                                        id="enableAi"
+                                        type="checkbox"
+                                        className="h-5 w-5 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-all cursor-pointer"
+                                        checked={enableAi}
+                                        onChange={(e) => setEnableAi(e.target.checked)}
+                                    />
+                                    <Label htmlFor="enableAi" className="cursor-pointer">
+                                        <span className="block font-bold text-slate-700 dark:text-slate-200 text-xs">Ativar Inteligência Artificial</span>
+                                        <span className="text-[10px] text-slate-500 font-medium leading-tight">Exibe o painel de insights estratégicos nas telas do sistema.</span>
+                                    </Label>
+                                </div>
+                            </div>
                             <div className="md:col-span-2 flex justify-end">
                                 <Button onClick={handleSaveUI} className="bg-cyan-600 hover:bg-cyan-700 font-bold">
                                     Salvar Interface
@@ -306,6 +460,11 @@ export function SettingsPage() {
                             </div>
                         </CardContent>
                     </Card>
+                </div>
+
+                {/* Account Security */}
+                <div className="lg:col-span-12">
+                    <AccountSecurityPanel />
                 </div>
 
                 {/* Jira Connection - Left Side */}
@@ -488,6 +647,26 @@ export function SettingsPage() {
                                     <Button onClick={handleSaveAiCreds} className="bg-indigo-600 hover:bg-indigo-700 h-11 px-6 font-bold shadow-indigo-200/50 shadow-md">
                                         Connect
                                     </Button>
+                                    {geminiKey && (
+                                        <Button
+                                            onClick={async () => {
+                                                localStorage.removeItem("gemini_api_key");
+                                                setGeminiKey("");
+
+                                                if (user?.uid) {
+                                                    await setDoc(doc(db, "users", user.uid), {
+                                                        geminiApiKey: ""
+                                                    }, { merge: true });
+                                                }
+
+                                                alert("Chave API desconectada.");
+                                            }}
+                                            variant="outline"
+                                            className="h-11 px-4 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"
+                                        >
+                                            Desconectar
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 

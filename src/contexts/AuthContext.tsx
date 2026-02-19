@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { AppUser } from '../types/user';
+import { AppUser, UserRole } from '../types/user';
 
 interface AuthContextType {
     user: AppUser | null;
@@ -22,63 +22,123 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchUserData = async (firebaseUser: User) => {
-        try {
-            const userDocRef = doc(db, 'users', firebaseUser.uid);
-            const userDoc = await getDoc(userDocRef);
-
-            if (userDoc.exists()) {
-                const userData = userDoc.data();
-                setUser({
-                    uid: firebaseUser.uid,
-                    email: firebaseUser.email,
-                    displayName: userData.displayName || firebaseUser.displayName,
-                    role: userData.role || 'user',
-                    allowedPanels: userData.allowedPanels || [],
-                    isBlocked: userData.isBlocked || false,
-                    createdAt: userData.createdAt,
-                });
-
-                // SE BLOQUEADO, DESLOGA IMEDIATAMENTE
-                if (userData.isBlocked) {
-                    await signOut(auth);
-                    setUser(null);
-                }
-            } else {
-                // Fallback para usuários sem registro no Firestore (apenas se doc não existir)
-                setUser({
-                    uid: firebaseUser.uid,
-                    email: firebaseUser.email,
-                    displayName: firebaseUser.displayName,
-                    role: 'user',
-                    allowedPanels: [],
-                    createdAt: new Date().toISOString()
-                });
-            }
-
-        } catch (err) {
-            console.error("Error fetching user data:", err);
-            setUser(null);
-        }
-    };
-
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            setLoading(true);
+        let unsubscribeUserDoc: (() => void) | null = null;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
-                await fetchUserData(firebaseUser);
+                setLoading(true);
+
+                const userDocRef = doc(db, 'users', firebaseUser.uid);
+
+                // Real-time listener for user data changes
+                unsubscribeUserDoc = onSnapshot(userDocRef, async (userDoc) => {
+                    if (!userDoc.exists()) {
+                        // New user - create document
+                        console.log("New user detected, creating document");
+                        const defaultPanels = ['strategic', 'okr', 'reports'];
+
+                        const newUserState = {
+                            uid: firebaseUser.uid,
+                            email: firebaseUser.email,
+                            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                            role: 'user' as UserRole,
+                            allowedPanels: defaultPanels,
+                            isBlocked: false,
+                            createdAt: new Date().toISOString()
+                        };
+
+                        await setDoc(userDocRef, { ...newUserState, email: firebaseUser.email });
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Existing user - update state from Firestore
+                    const userData = userDoc.data();
+                    let userPanels = userData?.allowedPanels || [];
+
+                    // Assign defaults if panels are empty (but not for admins)
+                    if (userPanels.length === 0 && !userData?.isBlocked && userData?.role !== 'admin') {
+                        userPanels = ['strategic', 'okr', 'reports'];
+                    }
+
+                    const appUser: AppUser = {
+                        uid: firebaseUser.uid,
+                        email: firebaseUser.email,
+                        displayName: userData?.displayName || firebaseUser.displayName,
+                        role: userData?.role || 'user',
+                        allowedPanels: userPanels,
+                        isBlocked: userData?.isBlocked || false,
+                        createdAt: userData?.createdAt,
+
+                        // Optional configs
+                        jiraUrl: userData?.jiraUrl,
+                        jiraEmail: userData?.jiraEmail,
+                        jiraToken: userData?.jiraToken,
+                        proxyUrl: userData?.proxyUrl,
+                        okrEpics: userData?.okrEpics,
+                        extraEpics: userData?.extraEpics,
+                        defaultEpicKey: userData?.defaultEpicKey,
+                        geminiApiKey: userData?.geminiApiKey,
+                        debugMode: userData?.debugMode,
+                        autoRefresh: userData?.autoRefresh,
+                        customLogo: userData?.customLogo
+                    };
+
+                    console.log("[AuthContext] User data updated:", {
+                        email: appUser.email,
+                        role: appUser.role,
+                        allowedPanels: appUser.allowedPanels
+                    });
+
+                    setUser(appUser);
+                    setLoading(false);
+
+                    // Block check - sign out if blocked
+                    if (userData?.isBlocked) {
+                        console.log("User is blocked, signing out");
+                        await signOut(auth);
+                        setUser(null);
+                    }
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    setLoading(false);
+                });
+
             } else {
+                // User logged out
+                if (unsubscribeUserDoc) {
+                    unsubscribeUserDoc();
+                    unsubscribeUserDoc = null;
+                }
+
+                // Clear Jira cache
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith('jira_cache_')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+
                 setUser(null);
+                setLoading(false);
             }
-            setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeAuth();
+            if (unsubscribeUserDoc) unsubscribeUserDoc();
+        };
     }, []);
 
     const refreshUser = async () => {
         if (auth.currentUser) {
-            await fetchUserData(auth.currentUser);
+            // The onSnapshot listener will handle updates automatically
+            // But we can force a re-read if needed
+            const userDocRef = doc(db, 'users', auth.currentUser.uid);
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists()) {
+                console.log("Manual refresh triggered");
+            }
         }
     };
 

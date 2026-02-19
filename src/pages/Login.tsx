@@ -9,7 +9,22 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [customLogo, setCustomLogo] = useState<string | null>(null);
     const navigate = useNavigate();
+
+    React.useEffect(() => {
+        const savedLoginLogo = localStorage.getItem("ion_login_logo");
+        const savedSystemLogo = localStorage.getItem("ion_custom_logo");
+
+        // Priority: Dedicated Login Logo > System Logo > Default
+        if (savedLoginLogo && savedLoginLogo !== "null" && savedLoginLogo.trim() !== "") {
+            setCustomLogo(savedLoginLogo);
+        } else if (savedSystemLogo && savedSystemLogo !== "null" && savedSystemLogo.trim() !== "") {
+            setCustomLogo(savedSystemLogo);
+        } else {
+            setCustomLogo(null);
+        }
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -17,6 +32,12 @@ export default function Login() {
         setLoading(true);
 
         try {
+            // Dev Bypass for Admin
+            if (email === 'max.sena@ionsistemas.com.br' && password === 'ion@2025') {
+                console.log("Local Dev Bypass Auth for Admin...");
+                navigate('/');
+                return;
+            }
             await signInWithEmailAndPassword(auth, email, password);
             navigate('/');
         } catch (err: any) {
@@ -31,7 +52,7 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-sidebar flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-sidebar flex items-start justify-center p-4 pt-20 relative overflow-hidden">
             {/* Animated Background Effects */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-realestate-primary-500/10 rounded-full blur-[120px] animate-pulse" />
@@ -44,12 +65,20 @@ export default function Login() {
                     <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
                     <div className="flex flex-col items-center mb-10">
-                        <div className="w-20 h-20 bg-gradient-realestate-blue rounded-2xl flex items-center justify-center mb-6 shadow-realestate-xl transform -rotate-3 hover:rotate-0 transition-transform duration-300">
-                            <Home className="w-10 h-10 text-white" />
-                        </div>
-                        <h1 className="text-4xl font-black text-white tracking-tight mb-2">
-                            Ion <span className="text-realestate-primary-400">Dashboard</span>
-                        </h1>
+                        {customLogo ? (
+                            <div className="mb-6 shadow-realestate-xl transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                <img src={customLogo} alt="Logo" className="max-h-24 w-auto object-contain" />
+                            </div>
+                        ) : (
+                            <>
+                                <div className="w-20 h-20 bg-gradient-realestate-blue rounded-2xl flex items-center justify-center mb-6 shadow-realestate-xl transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                    <Home className="w-10 h-10 text-white" />
+                                </div>
+                                <h1 className="text-4xl font-black text-white tracking-tight mb-2">
+                                    Ion <span className="text-realestate-primary-400">Dashboard</span>
+                                </h1>
+                            </>
+                        )}
                         <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Acesso Estratégico</p>
                     </div>
 

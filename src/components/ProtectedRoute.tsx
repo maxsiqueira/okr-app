@@ -40,7 +40,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         // 1. Garantir que allowedPanels existe e não está vazio
         if (!user.allowedPanels || user.allowedPanels.length === 0) {
             console.warn(`[ProtectedRoute] ❌ Usuário ${user.email} não tem painéis permitidos (allowedPanels vazio)`);
-            return <Navigate to="/" replace />;
+            return <Navigate to="/unauthorized" replace />;
+        }
+
+        // EXCEÇÃO: Usuários com 'reports' podem ver tudo exceto settings (igual ao Sidebar)
+        if (user.allowedPanels.includes('reports')) {
+            if (requiredPanel === 'settings') {
+                return <Navigate to="/" replace />;
+            }
+            return <>{children}</>;
         }
 
         // 2. Verificar se o painel requerido está na lista de permitidos
@@ -50,6 +58,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                 `\nUsuário: ${user.email}`,
                 `\nPainéis permitidos:`, user.allowedPanels
             );
+            // Redireciona para root, onde LandingRedirect vai decidir para onde ir baseado nas permissões reais
             return <Navigate to="/" replace />;
         }
 

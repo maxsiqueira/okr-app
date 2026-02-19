@@ -5,14 +5,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, Sparkles, ExternalLink, ListTodo, TrendingUp, Zap, AlertTriangle, Users } from "lucide-react"
+import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, ExternalLink, ListTodo, TrendingUp, Zap, AlertTriangle, Users, Printer } from "lucide-react"
 import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
-import { JiraService } from "@/services/jira"
-import { AiService } from "@/services/ai"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useTranslation } from "react-i18next"
-import { db } from "@/lib/firebase"
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
+import { StrategicReport } from "@/components/objectives/StrategicReport"
+import { JiraService } from "@/services/jira-client"
+import { db, auth } from "@/lib/firebase"
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore"
+import { AiInsightsSection } from "@/components/analytics/AiInsightsSection"
 
 export interface StrategicObjective {
     id: string
@@ -21,6 +23,8 @@ export interface StrategicObjective {
     epicKeys: string[] // List of epic keys associated with this objective
     teamIds?: string[] // Multiple teams
     teamId?: string // Legacy single team support
+    suggestedProgress?: number | null // Manual override for progress
+    excludeFromCalculation?: boolean // Flag to exclude from global KPI
 }
 
 export interface Team {
@@ -51,10 +55,14 @@ export function StrategicObjectives() {
     const [newTitle, setNewTitle] = useState("")
     const [newDesc, setNewDesc] = useState("")
     const [newEpics, setNewEpics] = useState("")
+    const [newSuggestedProgress, setNewSuggestedProgress] = useState<string>("")
+    const [includeInCalc, setIncludeInCalc] = useState<boolean>(true)
     const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
+    const [showReport, setShowReport] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [teams, setTeams] = useState<Team[]>([])
     const [showTeamManager, setShowTeamManager] = useState(false)
+    const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
     useEffect(() => {
         // Firestore Real-time sync for Objectives
@@ -66,6 +74,9 @@ export function StrategicObjectives() {
             });
             setObjectives(items);
             fetchEpicProgress(items);
+        }, (error) => {
+            console.error("Error fetching strategic_objectives:", error);
+            setErrorMsg(`Erro ao carregar Objetivos: ${error.message} (Code: ${error.code})`)
         });
 
         // Firestore Real-time sync for Teams
@@ -80,6 +91,11 @@ export function StrategicObjectives() {
             } else {
                 setTeams(DEFAULT_TEAMS);
             }
+        }, (error) => {
+            console.error("Error fetching strategic_teams:", error);
+            setErrorMsg(`Erro ao carregar Times: ${error.message} (Code: ${error.code})`)
+            // Fallback to defaults on error
+            setTeams(DEFAULT_TEAMS);
         });
 
         return () => {
@@ -91,6 +107,25 @@ export function StrategicObjectives() {
     const fetchEpicProgress = async (currentObjectives: StrategicObjective[]) => {
         setLoading(true)
         try {
+            // 1. Try Firestore shared cache first (2 min TTL)
+            const cachedRef = doc(db, "epic_progress_cache", "current");
+            const cachedDoc = await getDoc(cachedRef);
+
+            if (cachedDoc.exists()) {
+                const cached = cachedDoc.data();
+                const age = Date.now() - cached.timestamp;
+
+                // Use if less than 24 hours old (Persistence Strategy)
+                if (age < 24 * 60 * 60 * 1000) {
+                    console.log("[Epic Progress] Using Firestore cache (age:", Math.round(age / 1000), "s)");
+                    setEpicData(cached.data);
+                    setRawJiraEpics(cached.rawEpics || []);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            // 2. Fetch fresh from Jira
             const allKeys = Array.from(new Set(currentObjectives.flatMap(o => o.epicKeys)))
             if (allKeys.length === 0) {
                 setLoading(false)
@@ -109,12 +144,40 @@ export function StrategicObjectives() {
                     status: e.fields.status.name
                 }
             })
-            setEpicData(prev => ({ ...prev, ...progressMap }))
+
+            // 3. Save to Firestore for other users
+            await setDoc(cachedRef, {
+                data: progressMap,
+                rawEpics: epics,
+                timestamp: Date.now(),
+                updatedBy: auth.currentUser?.email || 'unknown'
+            });
+            console.log("[Epic Progress] Fetched from Jira and cached");
+
+            setEpicData(progressMap)
         } catch (error) {
             console.error("Failed to fetch epic progress", error)
         }
         setLoading(false)
     }
+
+
+    // UNIFIED PROGRESS CALCULATION - Ensures all users see same percentages
+    const getObjectiveProgress = (obj: StrategicObjective): number => {
+        // Priority 1: Manual override (suggestedProgress)
+        if (obj.suggestedProgress !== null && obj.suggestedProgress !== undefined) {
+            return obj.suggestedProgress;
+        }
+
+        // Priority 2: Calculate from Jira epic progress
+        if (obj.epicKeys.length === 0) return 0;
+
+        const progSum = obj.epicKeys.reduce(
+            (acc, key) => acc + (epicData[key]?.progress || 0),
+            0
+        );
+        return Math.round(progSum / obj.epicKeys.length);
+    };
 
     const saveObjectiveToFirestore = async (obj: StrategicObjective) => {
         try {
@@ -132,8 +195,15 @@ export function StrategicObjectives() {
                 title: newTitle,
                 description: newDesc,
                 epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
-                teamIds: selectedTeamIds
+                teamIds: selectedTeamIds,
+                suggestedProgress: newSuggestedProgress !== "" ? parseInt(newSuggestedProgress) : null,
+                excludeFromCalculation: !includeInCalc
             };
+
+            // Clean up null fields for Firestore
+            if (updated.suggestedProgress === null) {
+                delete (updated as any).suggestedProgress;
+            }
             await saveObjectiveToFirestore(updated);
             setEditingId(null)
         } else {
@@ -142,13 +212,21 @@ export function StrategicObjectives() {
                 title: newTitle,
                 description: newDesc,
                 epicKeys: newEpics.split(",").map(s => s.trim()).filter(Boolean),
-                teamIds: selectedTeamIds
+                teamIds: selectedTeamIds,
+                suggestedProgress: newSuggestedProgress !== "" ? parseInt(newSuggestedProgress) : null,
+                excludeFromCalculation: !includeInCalc
+            }
+
+            // Clean up null fields for Firestore
+            if (newItem.suggestedProgress === null) {
+                delete (newItem as any).suggestedProgress;
             }
             await saveObjectiveToFirestore(newItem);
         }
         setNewTitle("")
         setNewDesc("")
         setNewEpics("")
+        setNewSuggestedProgress("")
         setSelectedTeamIds([])
     }
 
@@ -157,6 +235,8 @@ export function StrategicObjectives() {
         setNewTitle(obj.title)
         setNewDesc(obj.description)
         setNewEpics(obj.epicKeys.join(", "))
+        setNewSuggestedProgress(obj.suggestedProgress != null ? obj.suggestedProgress.toString() : "")
+        setIncludeInCalc(!obj.excludeFromCalculation)
         // Handle migration from legacy teamId to teamIds
         setSelectedTeamIds(obj.teamIds || (obj.teamId ? [obj.teamId] : []))
         window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -167,6 +247,7 @@ export function StrategicObjectives() {
         setNewTitle("")
         setNewDesc("")
         setNewEpics("")
+        setNewSuggestedProgress("")
         setSelectedTeamIds([])
     }
 
@@ -191,11 +272,11 @@ export function StrategicObjectives() {
 
     // Consolidate metrics
     const totalMetas = objectives.length
-    const avgProgress = objectives.length > 0
-        ? Math.round(objectives.reduce((acc, obj) => {
-            const progSum = obj.epicKeys.reduce((eAcc, eKey) => eAcc + (epicData[eKey]?.progress || 0), 0)
-            return acc + (obj.epicKeys.length > 0 ? (progSum / obj.epicKeys.length) : 0)
-        }, 0) / objectives.length)
+    const objectivesForCalc = objectives.filter(o => !o.excludeFromCalculation)
+    const avgProgress = objectivesForCalc.length > 0
+        ? Math.round(objectivesForCalc.reduce((acc, obj) => {
+            return acc + getObjectiveProgress(obj)
+        }, 0) / objectivesForCalc.length)
         : 0
 
     const openJira = (key: string) => {
@@ -218,122 +299,76 @@ export function StrategicObjectives() {
                         <p className="text-slate-400 font-medium">{t('objectives.subtitle', 'Gestão à Vista e Monitoramento de Iniciativas')}</p>
                     </div>
                 </div>
-                <Button variant="outline" onClick={() => fetchEpicProgress(objectives)} disabled={loading} className="gap-2 font-bold uppercase tracking-wider text-xs border-slate-200 shadow-sm hover:bg-slate-50">
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    Sincronizar Jira
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => setShowReport(true)}
+                        className="gap-2 font-bold uppercase tracking-wider text-xs border border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 shadow-sm"
+                    >
+                        <Printer className="h-4 w-4" />
+                        Relatório
+                    </Button>
+                    <Button variant="outline" onClick={() => fetchEpicProgress(objectives)} disabled={loading} className="gap-2 font-bold uppercase tracking-wider text-xs border-slate-200 shadow-sm hover:bg-slate-50">
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                        Sincronizar Jira
+                    </Button>
+                </div>
             </div>
-
-            {/* KPI Board */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <StatCard
-                    title="Quantidade de Metas"
-                    value={totalMetas}
-                    icon={ListTodo}
-                    gradient="blue"
-                    className="h-32"
-                />
-                <StatCard
-                    title="Percentual Apurado (Consolidado)"
-                    value={`${avgProgress}%`}
-                    icon={Zap}
-                    gradient="purple"
-                    trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
-                    className="h-32"
-                />
+        </div>
+            {
+        errorMsg && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-r shadow-sm">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                        <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-red-700">
+                            {errorMsg}
+                        </p>
+                    </div>
+                </div>
             </div>
+        )
+    }
 
-            {/* AI Analyst Integration */}
+    {/* Strategic Report Overlay */ }
+    {
+        showReport && (
+            <StrategicReport
+                objectives={objectives}
+                epicData={epicData}
+                avgProgress={avgProgress}
+                onClose={() => setShowReport(false)}
+            />
+        )
+    }
+
+    {/* KPI Board */ }
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <StatCard
+            title="Quantidade de Metas"
+            value={totalMetas}
+            icon={ListTodo}
+            gradient="blue"
+            className="h-32"
+        />
+        <StatCard
+            title="Percentual Apurado (Metas Ativas)"
+            value={`${avgProgress}%`}
+            icon={Zap}
+            gradient="purple"
+            trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
+            className="h-32"
+        />
+    </div>
+
+    {/* AI Analyst Integration */ }
             <AiInsightsSection
                 epics={rawJiraEpics}
                 strategicObjectives={objectives}
                 manualOkrs={[]} // On this page we focus on Strategic
             />
-
-            <Card className={editingId ? "border-amber-200 bg-amber-50/30 shadow-lg" : "border-none bg-white dark:bg-slate-900 shadow-realestate overflow-hidden"}>
-                <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0 border-b border-slate-50 dark:border-slate-800 mb-4">
-                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
-                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <TrendingUp className="h-4 w-4 text-realestate-primary-500" />}
-                        {editingId ? "Modificar Objetivo" : "Novo Macro-Objetivo Estratégico"}
-                    </CardTitle>
-                    {editingId && (
-                        <Button variant="ghost" size="sm" onClick={cancelEditing} className="text-xs h-7 gap-1 uppercase font-bold text-amber-600 hover:text-amber-700 hover:bg-amber-100">
-                            <X className="h-3 w-3" /> Cancelar
-                        </Button>
-                    )}
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold">Título do Objetivo (Macro)</label>
-                            <Input
-                                value={newTitle}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTitle(e.target.value)}
-                                placeholder="Ex: Eficiência Operacional e Cloud"
-                                className="bg-white"
-                            />
-                        </div>
-                        <div className="md:col-span-2 space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-xs font-bold uppercase text-slate-400">Times Responsáveis</label>
-                                <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(true)} type="button" className="h-5 px-1 text-realestate-primary-500 hover:bg-realestate-primary-50">
-                                    <Plus className="h-3 w-3" /> <span className="text-[10px] ml-1 font-black">GERENCIAR</span>
-                                </Button>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 p-3 min-h-[42px] rounded-xl border border-slate-100 bg-slate-50/50">
-                                {teams.map(t => {
-                                    const isSelected = selectedTeamIds.includes(t.id);
-                                    return (
-                                        <button
-                                            key={t.id}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedTeamIds(prev =>
-                                                    prev.includes(t.id)
-                                                        ? prev.filter(id => id !== t.id)
-                                                        : [...prev, t.id]
-                                                )
-                                            }}
-                                            className={cn(
-                                                "px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border",
-                                                isSelected
-                                                    ? "text-white shadow-md scale-105"
-                                                    : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
-                                            )}
-                                            style={isSelected ? { backgroundColor: t.color, borderColor: t.color } : {}}
-                                        >
-                                            {t.name.toUpperCase()}
-                                        </button>
-                                    )
-                                })}
-                                {teams.length === 0 && <span className="text-[10px] text-slate-400 italic">Nenhum time cadastrado</span>}
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase text-slate-400 tracking-tight">Iniciativas Vinc. <span className="text-[10px] text-slate-300 ml-1">(Separe por vírgula)</span></label>
-                            <Input
-                                value={newEpics}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEpics(e.target.value)}
-                                placeholder="DEVOPS-633, DEVOPS-970, ..."
-                                className="bg-white rounded-xl border-slate-200"
-                            />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold">Descrição do Impacto Estratégico</label>
-                        <Textarea
-                            value={newDesc}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewDesc(e.target.value)}
-                            placeholder="Qual o valor de negócio esperado?"
-                            className="bg-white min-h-[80px]"
-                        />
-                    </div>
-                    <Button onClick={handleAdd} className={`w-full md:w-auto font-black uppercase text-xs tracking-[0.2em] gap-2 py-6 px-8 rounded-xl shadow-realestate-lg transition-transform hover:scale-[1.02] active:scale-[0.98] ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gradient-realestate-blue'}`}>
-                        {editingId ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                        {editingId ? "Salvar Alterações" : "Cadastrar no Board"}
-                    </Button>
-                </CardContent>
-            </Card>
 
             <Card className="shadow-realestate border-none bg-white dark:bg-slate-900 overflow-hidden">
                 <CardHeader className="border-b border-slate-50 dark:border-slate-800">
@@ -360,8 +395,8 @@ export function StrategicObjectives() {
                                 </TableRow>
                             ) : (
                                 objectives.map(obj => {
-                                    const progSum = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.progress || 0), 0)
-                                    const totalProg = obj.epicKeys.length > 0 ? Math.round(progSum / obj.epicKeys.length) : 0
+                                    const totalProg = getObjectiveProgress(obj)
+                                    const isManual = obj.suggestedProgress != null
                                     const totalHours = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.hours || 0), 0)
 
                                     return (
@@ -447,6 +482,12 @@ export function StrategicObjectives() {
                                                         <span className={`text-2xl font-black tracking-tight ${totalProg === 100 ? 'text-emerald-600' : 'text-slate-800'}`}>
                                                             {totalProg}%
                                                         </span>
+                                                        {isManual && (
+                                                            <Badge className="text-[8px] font-black bg-slate-100 text-slate-500 border-none px-1.5 py-0">{t('objectives.manual_progress_label', 'MANUAL')}</Badge>
+                                                        )}
+                                                        {obj.excludeFromCalculation && (
+                                                            <Badge className="text-[8px] font-black bg-rose-100 text-rose-500 border-none px-1.5 py-0">{t('objectives.excluded_from_calc_label', 'DESCONSIDERADO')}</Badge>
+                                                        )}
                                                     </div>
                                                     <div className="w-32 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
                                                         <div
@@ -474,175 +515,174 @@ export function StrategicObjectives() {
                     </Table>
                 </div>
             </Card>
-            {/* Team Management Modal */}
-            {showTeamManager && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <Card className="w-full max-w-md shadow-2xl">
-                        <CardHeader className="border-b">
+
+            <Card className={editingId ? "border-amber-200 bg-amber-50/30 shadow-lg" : "border-none bg-white dark:bg-slate-900 shadow-realestate overflow-hidden"}>
+                <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0 border-b border-slate-50 dark:border-slate-800 mb-4">
+                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <TrendingUp className="h-4 w-4 text-realestate-primary-500" />}
+                        {editingId ? "Modificar Objetivo" : "Novo Macro-Objetivo Estratégico"}
+                    </CardTitle>
+                    {editingId && (
+                        <Button variant="ghost" size="sm" onClick={cancelEditing} className="text-xs h-7 gap-1 uppercase font-bold text-amber-600 hover:text-amber-700 hover:bg-amber-100">
+                            <X className="h-3 w-3" /> Cancelar
+                        </Button>
+                    )}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold">Título do Objetivo (Macro)</label>
+                            <Input
+                                value={newTitle}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTitle(e.target.value)}
+                                placeholder="Ex: Eficiência Operacional e Cloud"
+                                className="bg-white"
+                            />
+                        </div>
+                        <div className="md:col-span-2 space-y-2">
                             <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg">Gerenciar Times Responsáveis</CardTitle>
-                                <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(false)}>
-                                    <X className="h-4 w-4" />
+                                <label className="text-xs font-bold uppercase text-slate-400">Times Responsáveis</label>
+                                <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(true)} type="button" className="h-5 px-1 text-realestate-primary-500 hover:bg-realestate-primary-50">
+                                    <Plus className="h-3 w-3" /> <span className="text-[10px] ml-1 font-black">GERENCIAR</span>
                                 </Button>
                             </div>
-                        </CardHeader>
-                        <CardContent className="pt-4 space-y-4">
-                            <form
-                                className="flex gap-2"
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    const form = e.target as HTMLFormElement;
-                                    const input = form.elements.namedItem('teamName') as HTMLInputElement;
-                                    handleTeamAdd(input.value);
-                                    input.value = '';
-                                }}
-                            >
-                                <Input name="teamName" placeholder="Nome do novo time..." className="bg-white" />
-                                <Button type="submit" size="sm" className="font-bold">ADC</Button>
-                            </form>
-                            <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 border rounded bg-slate-50">
-                                {teams.map(t => (
-                                    <div key={t.id} className="flex items-center gap-2 px-2 py-1 bg-white border rounded shadow-sm text-xs font-bold">
-                                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-                                        <span>{t.name}</span>
+                            <div className="flex flex-wrap gap-1.5 p-3 min-h-[42px] rounded-xl border border-slate-100 bg-slate-50/50">
+                                {teams.map(t => {
+                                    const isSelected = selectedTeamIds.includes(t.id);
+                                    return (
                                         <button
+                                            key={t.id}
                                             type="button"
-                                            onClick={() => handleTeamDelete(t.id)}
-                                            className="ml-1 text-slate-400 hover:text-red-500"
+                                            onClick={() => {
+                                                setSelectedTeamIds(prev =>
+                                                    prev.includes(t.id)
+                                                        ? prev.filter(id => id !== t.id)
+                                                        : [...prev, t.id]
+                                                )
+                                            }}
+                                            className={cn(
+                                                "px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border",
+                                                isSelected
+                                                    ? "text-white shadow-md scale-105"
+                                                    : "bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                                            )}
+                                            style={isSelected ? { backgroundColor: t.color, borderColor: t.color } : {}}
                                         >
-                                            <Trash2 className="h-3 w-3" />
+                                            {t.name.toUpperCase()}
                                         </button>
-                                    </div>
-                                ))}
+                                    )
+                                })}
+                                {teams.length === 0 && <span className="text-[10px] text-slate-400 italic">Nenhum time cadastrado</span>}
                             </div>
-                            <p className="text-[10px] text-muted-foreground italic">
-                                * Times deletados continuarão aparecendo em objetivos antigos até que sejam editados.
-                            </p>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
-        </div>
-    )
-}
-
-function AiInsightsSection({ epics, strategicObjectives, manualOkrs }: { epics: any[], strategicObjectives: any[], manualOkrs: any[] }) {
-    const [insight, setInsight] = useState<string | null>(null)
-    const [loading, setLoading] = useState(false)
-
-    const handleGenerate = async () => {
-        setLoading(true)
-        const result = await AiService.generateInsights({
-            epics,
-            strategicObjectives,
-            manualOkrs
-        })
-        setInsight(result)
-        setLoading(false)
-    }
-
-    return (
-        <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-indigo-100 dark:border-indigo-900 border-2">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <div className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-                        <Sparkles className="h-5 w-5" /> AI Strategic Analyst
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                        Análise de impacto cruzando iniciativas Jira e objetivos da diretoria.
-                    </p>
-                </div>
-                {!insight && (
-                    <Button onClick={handleGenerate} disabled={loading || (epics.length === 0 && strategicObjectives.length === 0)} size="sm" className="bg-indigo-600 hover:bg-indigo-700 shadow-md">
-                        {loading ? "Calculando..." : "Gerar Análise Estratégica"}
-                    </Button>
-                )}
-            </CardHeader>
-            {insight && (
-                <CardContent className="pt-2">
-                    <div className="prose dark:prose-invert text-sm max-w-none bg-white/50 dark:bg-black/20 p-4 rounded-lg border border-indigo-100/50">
-                        {insight.split('\n').map((line, i) => {
-                            if (!line.trim()) return <div key={i} className="h-2" />
-
-                            const parts = line.split(/(\*\*.*?\*\*)/g)
-                            const content = parts.map((part, j) => {
-                                if (part.startsWith('**') && part.endsWith('**')) {
-                                    return <strong key={j}>{part.slice(2, -2)}</strong>
-                                }
-                                return part
-                            })
-
-                            if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
-                                return <p key={i} className="pl-4 mb-1 flex items-start gap-2"><span>•</span><span>{content}</span></p>
-                            }
-
-                            if (line.match(/^\d\./)) {
-                                return <p key={i} className="font-bold text-base mt-4 mb-2 text-indigo-800 dark:text-indigo-400 border-b border-indigo-100 dark:border-indigo-900 pb-1">{content}</p>
-                            }
-
-                            return <p key={i} className="mb-2 leading-relaxed">{content}</p>
-                        })}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase text-slate-400 tracking-tight">Iniciativas Vinc. <span className="text-[10px] text-slate-300 ml-1">(Separe por vírgula)</span></label>
+                            <Input
+                                value={newEpics}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEpics(e.target.value)}
+                                placeholder="DEVOPS-633, DEVOPS-970, ..."
+                                className="bg-white rounded-xl border-slate-200"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase text-slate-400">{t('objectives.suggested_progress', 'Progresso Sugerido (%)')}</label>
+                            <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={newSuggestedProgress}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewSuggestedProgress(e.target.value)}
+                                placeholder="Manual (%)"
+                                className="bg-white rounded-xl border-slate-200"
+                            />
+                        </div>
                     </div>
-                    <div className="mt-4 flex justify-end gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                                if (insight) {
-                                    setLoading(true);
-                                    await AiService.saveAnalysisResult(insight);
-                                    setLoading(false);
-                                    alert("Análise salva com sucesso!");
-                                }
-                            }}
-                            disabled={loading}
-                            className="text-[10px] uppercase font-bold tracking-wider gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                        >
-                            {loading ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
-                            Salvar no Histórico
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setInsight(null)} className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                            Limpar Análise
-                        </Button>
-                    </div>
-                </CardContent>
-            )}
-
-            <CardContent className="border-t border-indigo-100/30 pt-4">
-                <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-bold uppercase text-indigo-400">Teste de Prompt Direto (Salva em 'historico_ia')</label>
-                    <div className="flex gap-2">
-                        <Input
-                            id="manual-prompt"
-                            placeholder="Digite um prompt para testar a gravação direta no Cloud..."
-                            className="bg-white/50 border-indigo-100 text-sm"
+                    <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <Checkbox
+                            id="includeInCalc"
+                            checked={includeInCalc}
+                            onCheckedChange={(checked: boolean) => setIncludeInCalc(checked)}
                         />
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 font-bold"
-                            onClick={async () => {
-                                const input = document.getElementById('manual-prompt') as HTMLInputElement;
-                                if (!input.value) return;
-                                try {
-                                    setLoading(true);
-                                    const res = await AiService.processAndSaveIA(input.value);
-                                    setInsight(res);
-                                    input.value = "";
-                                    alert("Sucesso! Verifique o console para confirmação do Google Cloud.");
-                                } catch (e: any) {
-                                    alert("Erro: " + e.message);
-                                } finally {
-                                    setLoading(false);
-                                }
-                            }}
-                            disabled={loading}
-                        >
-                            Enviar & Salvar
-                        </Button>
+                        <div className="grid gap-1.5 leading-none">
+                            <label
+                                htmlFor="includeInCalc"
+                                className="text-sm font-bold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                                {t('objectives.include_in_calculation', 'Considerar no Cálculo Global')}
+                            </label>
+                            <p className="text-[10px] text-slate-500 font-medium">
+                                {includeInCalc
+                                    ? "Este objetivo será incluído na média de progresso do dashboard."
+                                    : "Este objetivo ficará visível, mas não afetará a média global."}
+                            </p>
+                        </div>
                     </div>
-                </div>
-            </CardContent>
-        </Card>
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold">Descrição do Impacto Estratégico</label>
+                        <Textarea
+                            value={newDesc}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewDesc(e.target.value)}
+                            placeholder="Qual o valor de negócio esperado?"
+                            className="bg-white min-h-[80px]"
+                        />
+                    </div>
+                    <Button onClick={handleAdd} className={`w-full md:w-auto font-black uppercase text-xs tracking-[0.2em] gap-2 py-6 px-8 rounded-xl shadow-realestate-lg transition-transform hover:scale-[1.02] active:scale-[0.98] ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gradient-realestate-blue'}`}>
+                        {editingId ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                        {editingId ? "Salvar Alterações" : "Cadastrar no Board"}
+                    </Button>
+                </CardContent>
+            </Card>
+
+    {/* Team Management Modal */ }
+    {
+        showTeamManager && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <Card className="w-full max-w-md shadow-2xl">
+                    <CardHeader className="border-b">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">Gerenciar Times Responsáveis</CardTitle>
+                            <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(false)}>
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pt-4 space-y-4">
+                        <form
+                            className="flex gap-2"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                const form = e.target as HTMLFormElement;
+                                const input = form.elements.namedItem('teamName') as HTMLInputElement;
+                                handleTeamAdd(input.value);
+                                input.value = '';
+                            }}
+                        >
+                            <Input name="teamName" placeholder="Nome do novo time..." className="bg-white" />
+                            <Button type="submit" size="sm" className="font-bold">ADC</Button>
+                        </form>
+                        <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 border rounded bg-slate-50">
+                            {teams.map(t => (
+                                <div key={t.id} className="flex items-center gap-2 px-2 py-1 bg-white border rounded shadow-sm text-xs font-bold">
+                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                                    <span>{t.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTeamDelete(t.id)}
+                                        className="ml-1 text-slate-400 hover:text-red-500"
+                                    >
+                                        <Trash2 className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground italic">
+                            * Times deletados continuarão aparecendo em objetivos antigos até que sejam editados.
+                        </p>
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
+        </div >
     )
 }

@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
+// import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+// import { db } from "@/lib/firebase" // Ensure db is exported from your firebase config
+// import { toast } from "sonner" // Sonner not installed
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo } from "lucide-react"
+
+import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo, Settings } from "lucide-react"
 import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
-import { db } from "@/lib/firebase"
-import { doc, getDoc, setDoc } from "firebase/firestore"
+import { useSettings } from "@/contexts/SettingsContext"
 
 
 const TubularBar = (props: any) => {
@@ -134,8 +136,12 @@ const HorizontalTubularBar = (props: any) => {
 };
 
 export function EpicAnalysis() {
+    const { settings, updateEpicAnalysisSettings } = useSettings()
     const [searchParams, setSearchParams] = useSearchParams()
-    const savedDefaultKey = localStorage.getItem("default_epic_key") || "DEVOPS-633"
+    const navigate = useNavigate()
+
+    // Priority: URL Param > Settings (Firestore) > LocalStorage
+    const savedDefaultKey = settings?.epicAnalysis?.defaultEpicKey || localStorage.getItem("default_epic_key") || ""
     const initialKey = searchParams.get("key") || savedDefaultKey
 
     const [currentKey, setCurrentKey] = useState(initialKey.toUpperCase())
@@ -147,13 +153,30 @@ export function EpicAnalysis() {
     const [selectedQuarter, setSelectedQuarter] = useState("ALL")
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [extraEpicsData, setExtraEpicsData] = useState<any[]>([])
-    const [leaderNote, setLeaderNote] = useState("")
-    const [clevelNote, setClevelNote] = useState("")
-    const [savingNotes, setSavingNotes] = useState(false)
+    const [missingCredentials, setMissingCredentials] = useState(false)
+
+    // Check for missing Jira credentials on mount
+    useEffect(() => {
+        const jiraUrl = localStorage.getItem('jira_url')
+        const jiraEmail = localStorage.getItem('jira_email')
+        const jiraToken = localStorage.getItem('jira_token')
+
+        if (!jiraUrl || !jiraEmail || !jiraToken) {
+            console.warn('[EpicAnalysis] ⚠️ Missing Jira credentials')
+            setMissingCredentials(true)
+            setError('Configurações Jira não encontradas. Por favor, configure nas Settings ou aguarde o admin configurar.')
+            setLoading(false)
+        }
+    }, [])
 
     useEffect(() => {
-        loadEpic(currentKey)
-    }, [currentKey])
+        if (currentKey && currentKey.trim() !== "" && !missingCredentials) {
+            loadEpic(currentKey)
+        } else {
+            // No epic key to load, stop loading immediately
+            setLoading(false)
+        }
+    }, [currentKey, missingCredentials])
 
     const loadEpic = async (key: string, forceRefresh = false) => {
         setLoading(!data) // Only show loading text if we don't have data yet
@@ -162,41 +185,42 @@ export function EpicAnalysis() {
             const result = await JiraService.getEpicDetails(key, forceRefresh)
             if (result) {
                 setData(result)
-                // Load notes from Firestore
-                const docRef = doc(db, "epic_notes", key)
-                const docSnap = await getDoc(docRef)
-                if (docSnap.exists()) {
-                    setLeaderNote(docSnap.data().leaderNote || "")
-                    setClevelNote(docSnap.data().clevelNote || "")
-                } else {
-                    setLeaderNote("")
-                    setClevelNote("")
+                // Persistence: Save to Firestore (Data)
+                import('@/services/jira-persistence').then(({ JiraPersistenceService }) => {
+                    JiraPersistenceService.saveEpicData(key, result)
+                })
+
+                // Persistence: Save as Preference (Settings)
+                if (key !== settings?.epicAnalysis?.defaultEpicKey) {
+                    updateEpicAnalysisSettings({ defaultEpicKey: key })
                 }
             } else {
-                setError(`Epic ${key} not found or details unavailable.`)
-                setData(null)
+                // Fallback: Try loading from persistence if live fetch returns nothing/fails logic
+                throw new Error("Epic not found in live search")
             }
         } catch (err: any) {
-            const errorMessage = err?.message || "Failed to load epic details"
-            setError(`${errorMessage}. Please check your Jira credentials/connection in Settings.`)
-            console.error("[EpicAnalysis] Error:", err)
+            console.warn("[EpicAnalysis] Live fetch failed, attempting persistence load...", err)
+
+            try {
+                const { JiraPersistenceService } = await import('@/services/jira-persistence')
+                const cachedData = await JiraPersistenceService.loadEpicData(key)
+                if (cachedData) {
+                    setData(cachedData)
+                    console.log("Modo Offline: Dados carregados do cache (Sincronização falhou)")
+                    // Don't clear error entirely, possibly show it as a warning? 
+                    // For now, let's clear it to show the dashboard, but maybe keep a small indicator.
+                    setError(null)
+                } else {
+                    throw err // Re-throw original error if no cache
+                }
+            } catch (persistErr) {
+                console.error("[EpicAnalysis] Final Error:", err)
+                // Use the Service error message directly to show Auth/Network/Not Found errors
+                const errorMessage = err?.message || "Failed to load epic details"
+                setError(errorMessage)
+            }
         }
         setLoading(false)
-    }
-
-    const saveNotes = async () => {
-        setSavingNotes(true)
-        try {
-            await setDoc(doc(db, "epic_notes", currentKey), {
-                leaderNote,
-                clevelNote,
-                updatedAt: new Date().toISOString()
-            }, { merge: true })
-        } catch (err) {
-            console.error("Error saving notes:", err)
-            alert("Erro ao salvar notas.")
-        }
-        setSavingNotes(false)
     }
 
     useEffect(() => {
@@ -216,11 +240,27 @@ export function EpicAnalysis() {
             // Transform data to convert timespent from seconds to hours
             const transformedData = results.map(epic => ({
                 ...epic,
-                hoursSpent: Math.round((epic.fields.timespent || 0) / 36) / 100 // Convert to hours with 2 decimals
+                // Use aggregatetimespent (total including children) instead of timespent (often null for Epics)
+                hoursSpent: Math.round((epic.fields.aggregatetimespent || epic.fields.timespent || 0) / 36) / 100
             }))
             setExtraEpicsData(transformedData)
+
+            // Persistence: Save Extra Epics
+            import('@/services/jira-persistence').then(({ JiraPersistenceService }) => {
+                JiraPersistenceService.saveExtraEpicsData(transformedData)
+            })
+
         } catch (err) {
-            console.error("[EpicAnalysis] Error loading extra epics:", err)
+            console.warn("[EpicAnalysis] Live extra epics fetch failed, attempting persistence...", err)
+            try {
+                const { JiraPersistenceService } = await import('@/services/jira-persistence')
+                const cachedExtras = await JiraPersistenceService.loadExtraEpicsData()
+                if (cachedExtras && cachedExtras.length > 0) {
+                    setExtraEpicsData(cachedExtras)
+                }
+            } catch (persistErr) {
+                console.error("[EpicAnalysis] Error loading extra epics:", err)
+            }
         }
     }
 
@@ -236,11 +276,52 @@ export function EpicAnalysis() {
 
     if (loading) return <div className="p-8 text-center">Loading analysis for {currentKey}...</div>
 
+    if (!currentKey || currentKey.trim() === "") {
+        return (
+            <div className="p-8 space-y-6 max-w-2xl mx-auto">
+                <div className="text-center space-y-4">
+                    <div className="inline-block p-4 bg-gradient-realestate-blue rounded-2xl shadow-lg">
+                        <ListTodo className="h-12 w-12 text-white" />
+                    </div>
+                    <h2 className="text-3xl font-black text-slate-800 dark:text-white">Análise de Epic</h2>
+                    <p className="text-slate-500 dark:text-slate-400">Digite o Key do Epic do Jira que deseja analisar</p>
+                </div>
+                <form onSubmit={handleSearch} className="flex gap-2">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                        <Input
+                            placeholder="Ex: ION-123, DEVOPS-456..."
+                            className="pl-10 h-12 text-lg border-2 border-slate-200 focus-visible:ring-primary/20"
+                            value={searchKey}
+                            onChange={(e) => setSearchKey(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                    <Button type="submit" className="h-12 px-8 font-bold shadow-lg shadow-primary/20">
+                        Analisar
+                    </Button>
+                </form>
+            </div>
+        )
+    }
+
     if (error || !data) {
         return (
             <div className="p-8 space-y-4">
                 <h2 className="text-2xl font-bold text-red-500">Error Loading Epic</h2>
                 <p>{error}</p>
+                {missingCredentials && (
+                    <div className="flex gap-2">
+                        <Button
+                            onClick={() => navigate('/settings')}
+                            variant="default"
+                            className="gap-2"
+                        >
+                            <Settings className="h-4 w-4" />
+                            Go to Settings
+                        </Button>
+                    </div>
+                )}
                 <div className="max-w-md">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
                         <form onSubmit={handleSearch} className="flex gap-2 w-full md:max-w-md">
@@ -254,23 +335,25 @@ export function EpicAnalysis() {
                                 />
                             </div>
                             <Button type="submit" className="h-10 px-6 font-bold shadow-lg shadow-primary/20">Analisar</Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                className="h-10 gap-2 border-slate-200"
-                                onClick={() => {
-                                    loadEpic(currentKey, true)
-                                    const extraKeysStr = localStorage.getItem("extra_epics") || ""
-                                    if (extraKeysStr) {
-                                        const keys = extraKeysStr.split(",").map(k => k.trim()).filter(k => k.length > 0)
-                                        if (keys.length > 0) loadExtraEpics(keys, true)
-                                    }
-                                }}
-                                disabled={loading}
-                            >
-                                <TrendingUp className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                                Sync
-                            </Button>
+                            {!missingCredentials && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-10 gap-2 border-slate-200"
+                                    onClick={() => {
+                                        loadEpic(currentKey, true)
+                                        const extraKeysStr = localStorage.getItem("extra_epics") || ""
+                                        if (extraKeysStr) {
+                                            const keys = extraKeysStr.split(",").map(k => k.trim()).filter(k => k.length > 0)
+                                            if (keys.length > 0) loadExtraEpics(keys, true)
+                                        }
+                                    }}
+                                    disabled={loading}
+                                >
+                                    <TrendingUp className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                                    Sync
+                                </Button>
+                            )}
                         </form>
                     </div>
                 </div>
@@ -408,24 +491,64 @@ export function EpicAnalysis() {
     // SUBTASK METRICS (Secondary details)
     // subDone, subInProgress, subToDo removed as they were not used in UI
 
-    // GLOBAL Counters (Independent of Filter)
-    const globalStoryCount = children.filter(c =>
-        ["Story", "Historia", "História"].some(name => c.fields.issuetype.name.includes(name))
-    ).length
-    const globalTaskCount = children.filter(c =>
-        ["Task", "Tarefa"].some(name => c.fields.issuetype.name.includes(name))
-    ).length
-    const globalBugCount = children.filter(c =>
-        ["Bug", "Defeito", "Falha"].some(name => c.fields.issuetype.name.includes(name))
-    ).length
-    const globalBlockCount = children.filter(c =>
-        ["Block", "Impedimento", "Blocker"].some(name => c.fields.issuetype.name.includes(name))
-    ).length
-    const globalSubtaskCount = children.reduce((acc, c) => {
-        const fromSubtasksProperty = c.subtasks?.length || 0
-        const isSelfSubtask = c.fields.issuetype.subtask ? 1 : 0
-        return acc + fromSubtasksProperty + isSelfSubtask
+    // METRICS (React to Filters)
+    // We use filteredChildren to respect Quarter/Version filters
+    // We also likely want to exclude Cancelled items from these "Achievement" counts
+
+    // COUNTER METRICS - Use RAW children data (not filtered by version/quarter)
+    // This ensures counters show the TOTAL count across the entire Epic
+    const allActiveChildren = children.filter(c => !c.fields.status.name.toLowerCase().includes("cancel"))
+
+    // Helper functions for classification
+    const normalizeType = (c: JiraIssue) => (c.fields.issuetype.name || "").trim().toLowerCase()
+
+    const isStory = (c: JiraIssue) => {
+        const t = normalizeType(c)
+        return ["story", "historia", "história", "user story"].some(k => t.includes(k))
+    }
+
+    const isBug = (c: JiraIssue) => {
+        const t = normalizeType(c)
+        return ["bug", "defect", "defeito", "falha"].some(k => t.includes(k))
+    }
+
+    const isBlock = (c: JiraIssue) => {
+        const t = normalizeType(c)
+        return ["block", "bloqueio", "impediment", "impedimento", "blocker"].some(k => t.includes(k))
+    }
+
+    // Major Counters (Direct Children) - Using ALL children to match total Jira visibility
+    const globalStoryCount = children.filter(isStory).length
+    const globalBugCount = children.filter(isBug).length
+    const globalBlockCount = children.filter(isBlock).length
+
+    // Task is a CATCH-ALL for direct children that aren't Stories, Bugs, or Blocks
+    const globalTaskCount = children.filter(c => !isStory(c) && !isBug(c) && !isBlock(c)).length
+
+    // Subtasks counter: Sum of ALL subtasks from ALL children (raw total)
+    // This matches the user's JQL: "parent in (...) AND issuetype = Sub-task"
+    const globalSubtaskCount = children.reduce((acc: number, c: JiraIssue) => {
+        const subs = (c.fields?.subtasks || c.subtasks || [])
+        return acc + subs.length
     }, 0)
+
+
+    // DEBUG: Log counter breakdown
+    console.log('[EpicAnalysis] 🔍 Counter Debug for Epic:', currentKey, {
+        totalChildren: children.length,
+        allActiveChildren: allActiveChildren.length,
+        filteredChildren: filteredChildren.length,
+        activeFilteredChildren: activeIssuesFiltered.length,
+        issueTypesFound: Array.from(new Set(allActiveChildren.map(c => c.fields.issuetype.name))),
+        counters: {
+            stories: globalStoryCount,
+            tasks: globalTaskCount,
+            bugs: globalBugCount,
+            blocks: globalBlockCount,
+            subtasks: globalSubtaskCount
+        },
+        note: 'Counters now use RAW children data (not filtered by version/quarter)'
+    })
 
     const chartData = [
         { name: 'Concluídos', value: majorDone, color: '#10B981' },
@@ -434,37 +557,36 @@ export function EpicAnalysis() {
         { name: 'Canceladas', value: majorCancelled, color: '#EF4444' },
     ].filter(item => item.value > 0)
 
-    // Time Tracking
-    let totalSpentSeconds = epic.fields.timespent || 0
-    let totalEstimateSeconds = epic.fields.timeoriginalestimate || epic.fields.timeestimate || 0
-
-    filteredChildren.forEach(child => {
-        totalSpentSeconds += child.fields.timespent || 0
-        totalEstimateSeconds += child.fields.timeoriginalestimate || child.fields.timeestimate || 0
-        if (child.subtasks) {
-            child.subtasks.forEach(sub => {
-                totalSpentSeconds += sub.fields.timespent || 0
-                totalEstimateSeconds += sub.fields.timeoriginalestimate || sub.fields.timeestimate || 0
-            })
-        }
-    })
-
-    const totalSpentHours = Math.round(totalSpentSeconds / 3600)
-    const totalEstimateHours = Math.round(totalEstimateSeconds / 3600)
-    const timeProgress = totalEstimateHours > 0 ? Math.min(100, Math.round((totalSpentHours / totalEstimateHours) * 100)) : 0
-
-    // Workload
+    // Time Tracking & Workload Variables
+    let totalSpentSeconds = 0
+    let totalEstimateSeconds = 0
     const workloadMap = new Map<string, number>()
+
+    // Add Epic's own time to workload if available (optional, but good for completeness if Epic has time logged directly)
     if (epic.fields.timespent) {
-        const hours = epic.fields.timespent / 3600
-        workloadMap.set("Epic: " + (epic.fields.components?.[0]?.name || "General"), hours)
+        workloadMap.set("Epic: " + (epic.fields.components?.[0]?.name || "General"), epic.fields.timespent / 3600)
     }
 
+    // Calculations moved after loop
+
+
     filteredChildren.forEach(child => {
-        let seconds = child.fields.timespent || 0
-        if (child.subtasks) {
-            child.subtasks.forEach(sub => { seconds += (sub.fields.timespent || 0) })
+        // Use AGGREGATE time from the child if available, which matches Jira's internal rollup.
+        // Fallback to timespent + subtasks sum if aggregate is missing.
+        let seconds: number = child.fields.aggregatetimespent ?? 0;
+        const hasAggregate = child.fields.aggregatetimespent !== undefined && child.fields.aggregatetimespent !== null;
+
+        if (!hasAggregate) {
+            seconds = child.fields.timespent || 0
+            if (child.subtasks) {
+                child.subtasks.forEach(sub => { seconds += (sub.fields.timespent || 0) })
+            }
         }
+
+        // Sum to total
+        totalSpentSeconds += seconds
+        totalEstimateSeconds += (child.fields.aggregatetimeoriginalestimate || child.fields.timeoriginalestimate || 0)
+
         const hours = seconds / 3600
         if (hours > 0) {
             const groups = child.fields.components?.length ? child.fields.components.map(c => c.name) : ["General"]
@@ -475,6 +597,10 @@ export function EpicAnalysis() {
             })
         }
     })
+
+    const totalSpentHours = Math.round(totalSpentSeconds / 3600)
+    const totalEstimateHours = Math.round(totalEstimateSeconds / 3600)
+    const timeProgress = totalEstimateHours > 0 ? Math.min(100, Math.round((totalSpentHours / totalEstimateHours) * 100)) : 0
 
     const realWorkloadData = Array.from(workloadMap.entries()).map(([name, hours]) => ({
         name,
@@ -501,6 +627,54 @@ export function EpicAnalysis() {
     })
 
     const componentData = Array.from(componentStats.entries()).sort((a, b) => (b[1].done + b[1].wip) - (a[1].done + a[1].wip))
+
+    // --- SNAPSHOT LOGIC ---
+    /*
+    const statusDistribution = {
+        done: majorDone,
+        inProgress: majorInProgress,
+        todo: majorToDo,
+        cancelled: majorCancelled
+    }
+    */
+
+    /*
+    const handleManualSnapshot = async () => {
+        try {
+            await addDoc(collection(db, "epic_snapshots"), {
+                epicKey: currentKey,
+                timestamp: serverTimestamp(),
+                version: "2.1-manual",
+                counters: {
+                    stories: globalStoryCount,
+                    tasks: globalTaskCount,
+                    bugs: globalBugCount,
+                    blocks: globalBlockCount,
+                    subtasks: globalSubtaskCount
+                },
+                timeTracking: {
+                    spentSeconds: totalSpentSeconds,
+                    estimateSeconds: totalEstimateSeconds,
+                    spentHours: totalSpentHours,
+                    estimateHours: totalEstimateHours
+                },
+                distribution: statusDistribution
+            })
+            // toast.success("Snapshot salvo com sucesso!")
+        } catch (e) {
+            console.error(e)
+            // toast.error("Erro ao salvar snapshot")
+        }
+    }
+    */
+
+    // Auto-save effect (optional/commented out for now)
+    /*
+    useEffect(() => {
+        if (!epic || loading || !allActiveChildren.length) return
+        // saveSnapshot() logic here if we want auto-save
+    }, [epic, allActiveChildren.length, totalSpentSeconds])
+    */
 
     return (
         <div className="space-y-6">
@@ -809,47 +983,6 @@ export function EpicAnalysis() {
                                     Sem dados para exibir.
                                 </div>
                             )}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-lg">Leader Note</CardTitle>
-                        <CardDescription>Anotações do Líder Técnico</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Textarea
-                            placeholder="Insira suas observações técnicas aqui..."
-                            className="min-h-[150px] resize-none"
-                            value={leaderNote}
-                            onChange={(e) => setLeaderNote(e.target.value)}
-                        />
-                        <div className="flex justify-end mt-2">
-                            <Button size="sm" onClick={saveNotes} disabled={savingNotes}>
-                                {savingNotes ? "Salvando..." : "Salvar Nota"}
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-lg">C-Level Note</CardTitle>
-                        <CardDescription>Visão Executiva e Estratégica</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Textarea
-                            placeholder="Insira observações para diretoria/executivos..."
-                            className="min-h-[150px] resize-none"
-                            value={clevelNote}
-                            onChange={(e) => setClevelNote(e.target.value)}
-                        />
-                        <div className="flex justify-end mt-2">
-                            <Button size="sm" onClick={saveNotes} disabled={savingNotes}>
-                                {savingNotes ? "Salvando..." : "Salvar Nota"}
-                            </Button>
                         </div>
                     </CardContent>
                 </Card>

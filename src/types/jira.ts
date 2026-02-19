@@ -25,9 +25,13 @@ export interface JiraIssue {
         timeoriginalestimate?: number // Seconds
         timeestimate?: number // Seconds
         timespent?: number // Seconds
+        aggregatetimespent?: number
+        aggregatetimeoriginalestimate?: number
+        aggregatetimeestimate?: number
         components?: { name: string }[]
         labels?: string[]
         fixVersions?: { name: string, released: boolean, releaseDate?: string }[]
+        subtasks?: any[] // Jira returns simple subtasks in fields
         created: string
         updated: string
         resolutiondate?: string | null
@@ -44,6 +48,7 @@ export interface JiraIssue {
             thumbnail?: string
             mimeType: string
             size: number
+            size_formatted?: string
         }[]
     }
     progress?: number // Calculated progress (0-100)

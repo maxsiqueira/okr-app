@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

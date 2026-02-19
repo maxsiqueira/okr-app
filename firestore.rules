@@ -1,8 +1,69 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // System config - Admin only
+    // System config - Read: All auth users (for shared settings), Write: Admin only
+    match /system_config/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Jira cache - All authenticated users can read, only backend (Functions) can write
+    match /jira_cache/{doc} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only Firebase Functions can write
+    }
+    
+    // Users - Self or admin
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // User settings - Self only (UI preferences, no Jira credentials)
+    match /user_settings/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+    
+    // Epic progress cache (existing)
+    match /epic_progress_cache/{epicKey} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null; // Allow updates
+    }
+    
+    // Config (SMTP, etc) - Admin only
+    match /config/{doc} {
+      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Strategic Objectives - All authenticated users
+    match /strategic_objectives/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null; // Users can create/update objectives
+    }
+    
+    // Manual OKRs - All authenticated users
+    match /manual_okrs/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Strategic Epics - All authenticated users
+    match /strategic_epics/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Strategic Teams - All authenticated users
+    match /strategic_teams/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Everything else - deny by default
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home } from "lucide-react"
+import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home, FileBarChart } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
@@ -29,6 +29,19 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
     const canAccess = (panelId: string) => {
         if (!user) return false;
         if (user.role === 'admin') return true;
+
+        // Special rule: users with 'reports' access can see all panels EXCEPT settings
+        // This allows them to generate reports from all data sources
+        if (user.allowedPanels?.includes('reports')) {
+            // Deny access to settings/user management
+            if (panelId === 'settings') {
+                return false;
+            }
+            // Allow access to all other panels for report generation
+            return true;
+        }
+
+        // Normal permission check
         return user.allowedPanels?.includes(panelId);
     }
 
@@ -118,16 +131,16 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                         {t('sidebar.dashboard', 'Dashboard')}
                     </h2>
                     <div className="space-y-1">
+                        {canAccess('strategic-objectives') && (
+                            <NavLink to="/strategic-objectives" active={pathname === "/strategic-objectives"} badge={{ text: "v2", variant: "new" }}>
+                                <Target className="h-4 w-4" />
+                                <span>{t('sidebar.strategic_objectives', 'Strategic Objectives')}</span>
+                            </NavLink>
+                        )}
                         {canAccess('strategic') && (
                             <NavLink to="/strategic" active={pathname === "/strategic" || pathname === "/"}>
                                 <LayoutDashboard className="h-4 w-4" />
                                 <span>{t('sidebar.strategic_overview', 'Strategic Overview')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('strategic-objectives') && (
-                            <NavLink to="/strategic-objectives" active={pathname === "/strategic-objectives"}>
-                                <Target className="h-4 w-4" />
-                                <span>{t('sidebar.strategic_objectives', 'Strategic Objectives')}</span>
                             </NavLink>
                         )}
                         {canAccess('okr') && (
@@ -180,6 +193,12 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                             <NavLink to="/manual-okrs" active={pathname === "/manual-okrs"}>
                                 <Edit3 className="h-4 w-4" />
                                 <span>{t('sidebar.manual_okrs', 'Manual OKRs')}</span>
+                            </NavLink>
+                        )}
+                        {canAccess('reports') && (
+                            <NavLink to="/reports" active={pathname === "/reports"}>
+                                <FileBarChart className="h-4 w-4" />
+                                <span>{t('sidebar.reports', 'Reports')}</span>
                             </NavLink>
                         )}
                         {canAccess('settings') && (

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { JiraService } from "@/services/jira"
+import { JiraService } from "@/services/jira-client"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, Layers } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
+import { db } from "@/lib/firebase"
+import { doc, onSnapshot } from "firebase/firestore"
 
 // Custom 3D-like Cylinder shape for BarChart
 const CylinderBar = (props: any) => {
@@ -31,17 +34,38 @@ export function ExtraEpicAnalysis() {
     const [allData, setAllData] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [displayYear] = useState(new Date().getFullYear())
+    const [systemConfig, setSystemConfig] = useState<any>(null)
+    const { user } = useAuth()
 
     useEffect(() => {
-        const extraKeysStr = localStorage.getItem("extra_epics") || ""
-        if (extraKeysStr) {
-            const keys = extraKeysStr.split(",").map(k => k.trim()).filter(k => k.length > 0)
+        const unsubscribe = onSnapshot(doc(db, "system_config", "jira"), (snapshot) => {
+            if (snapshot.exists()) {
+                setSystemConfig(snapshot.data())
+            }
+        })
+        return () => unsubscribe()
+    }, [])
+
+    useEffect(() => {
+        // Helper to safe parse keys from various sources (string, array, null)
+        const parseKeys = (val: any): string[] => {
+            if (!val) return []
+            if (Array.isArray(val)) return val
+            if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean)
+            return []
+        }
+
+        // Priority: User Profile > Firestore system_config > localStorage
+        const extraSource = user?.extraEpics || systemConfig?.extra_epic_keys || localStorage.getItem("extra_epics")
+        const keys = parseKeys(extraSource)
+
+        if (keys.length > 0) {
             setExtraKeys(keys)
             loadDetails(keys)
         } else {
             setLoading(false)
         }
-    }, [])
+    }, [user, systemConfig])
 
     const loadDetails = async (keys: string[]) => {
         setLoading(true)

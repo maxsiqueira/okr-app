@@ -21,6 +21,7 @@
         "results_assessment": "Apuração de Resultados",
         "management": "Gestão",
         "manual_okrs": "OKRs Manuais",
+        "reports": "Relatórios",
         "settings": "Configurações"
     },
     "objectives": {
@@ -37,7 +38,11 @@
         "tracking": "Acompanhamento de Objetivos",
         "okr_cross_alert": "Considerar esforço - OKR Cross",
         "zero_progress_alert": "Atenção: Progresso Zero",
-        "total_effort": "Esforço Total"
+        "total_effort": "Esforço Total",
+        "suggested_progress": "Progresso Sugerido (%)",
+        "manual_progress_label": "MANUAL",
+        "include_in_calculation": "Considerar no Cálculo Global",
+        "excluded_from_calc_label": "DESCONSIDERADO"
     },
     "dashboard": {
         "title": "Visão Estratégica",
