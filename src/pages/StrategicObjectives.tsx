@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Plus, Trash2, Target, BarChart3, RefreshCw, Pencil, X, ExternalLink, ListTodo, TrendingUp, Zap, AlertTriangle, Users, Printer } from "lucide-react"
-import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useTranslation } from "react-i18next"
@@ -290,13 +289,13 @@ export function StrategicObjectives() {
     return (
         <div className="space-y-6 p-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-realestate-primary-500 rounded-2xl shadow-realestate-lg transform -rotate-3">
+                <div className="flex items-center gap-4">
+                    <div className="p-3 bg-[#FF4200] rounded-2xl shadow-lg shadow-orange-100 dark:shadow-none transform -rotate-3">
                         <Target className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-black tracking-tight text-slate-800 dark:text-white uppercase">{t('objectives.title', 'Objetivos Estratégicos')}</h2>
-                        <p className="text-slate-400 font-medium">{t('objectives.subtitle', 'Gestão à Vista e Monitoramento de Iniciativas')}</p>
+                        <h2 className="text-3xl font-black tracking-tighter text-[#001540] dark:text-white uppercase leading-none">{t('objectives.title', 'Objetivos Estratégicos')}</h2>
+                        <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">{t('objectives.subtitle', 'Gestão à Vista e Monitoramento de Iniciativas')}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -345,21 +344,23 @@ export function StrategicObjectives() {
 
             {/* KPI Board */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <StatCard
-                    title="Quantidade de Metas"
-                    value={totalMetas}
-                    icon={ListTodo}
-                    gradient="blue"
-                    className="h-32"
-                />
-                <StatCard
-                    title="Percentual Apurado (Metas Ativas)"
-                    value={`${avgProgress}%`}
-                    icon={Zap}
-                    gradient="purple"
-                    trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
-                    className="h-32"
-                />
+                <div className="bg-[#001540] p-8 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50 h-36">
+                    <div className="flex justify-between items-start">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Quantidade de Metas</p>
+                        <ListTodo size={20} className="text-white/30" />
+                    </div>
+                    <h2 className="text-5xl font-black leading-none">{totalMetas}</h2>
+                </div>
+                <div className="bg-[#FF4200] p-8 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-orange-200/50 h-36 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
+                    <div className="flex justify-between items-start relative z-10">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Percentual Apurado (Metas Ativas)</p>
+                        <Zap size={20} className="text-white/40" />
+                    </div>
+                    <div className="relative z-10">
+                        <h2 className="text-6xl font-black leading-none">{avgProgress}%</h2>
+                    </div>
+                </div>
             </div>
 
             {/* AI Analyst Integration */}
@@ -369,10 +370,10 @@ export function StrategicObjectives() {
                 manualOkrs={[]} // On this page we focus on Strategic
             />
 
-            <Card className="shadow-realestate border-none bg-white dark:bg-slate-900 overflow-hidden">
-                <CardHeader className="border-b border-slate-50 dark:border-slate-800">
-                    <CardTitle className="text-lg font-black flex items-center gap-2 text-slate-700 dark:text-slate-200 uppercase tracking-tight">
-                        <Target className="w-5 h-5 text-realestate-primary-500" /> Acompanhamento de Objetivos
+            <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden rounded-[32px]">
+                <CardHeader className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
+                    <CardTitle className="text-lg font-black flex items-center gap-2 text-[#001540] dark:text-slate-200 uppercase tracking-tight">
+                        <Target className="w-5 h-5 text-[#FF4200]" /> Acompanhamento de Objetivos
                     </CardTitle>
                 </CardHeader>
                 <div className="overflow-x-auto">
@@ -403,8 +404,8 @@ export function StrategicObjectives() {
                                             <TableCell className="py-6">
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                        <div className="w-2 h-2 rounded-full bg-realestate-primary-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] flex-shrink-0" />
-                                                        <span className="font-black text-slate-800 dark:text-slate-100 text-lg leading-tight uppercase">{obj.title}</span>
+                                                        <div className="w-2 h-2 rounded-full bg-[#FF4200] shadow-[0_0_8px_rgba(255,66,0,0.5)] flex-shrink-0" />
+                                                        <span className="font-black text-[#001540] dark:text-slate-100 text-lg leading-tight uppercase tracking-tight">{obj.title}</span>
                                                         <div className="flex flex-wrap gap-1">
                                                             {(() => {
                                                                 const teamIds = obj.teamIds || (obj.teamId ? [obj.teamId] : []);
@@ -498,7 +499,7 @@ export function StrategicObjectives() {
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1 px-2">
-                                                    <Button variant="ghost" size="sm" onClick={() => startEditing(obj)} className="text-slate-400 hover:text-realestate-primary-500 hover:bg-realestate-primary-50 transition-colors p-2 rounded-lg">
+                                                    <Button variant="ghost" size="sm" onClick={() => startEditing(obj)} className="text-slate-400 hover:text-[#FF4200] hover:bg-orange-50 transition-colors p-2 rounded-lg">
                                                         <Pencil className="h-4 w-4" />
                                                     </Button>
                                                     <Button variant="ghost" size="sm" onClick={() => handleDelete(obj.id)} className="text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors p-2 rounded-lg">
@@ -517,8 +518,8 @@ export function StrategicObjectives() {
 
             <Card className={editingId ? "border-amber-200 bg-amber-50/30 shadow-lg" : "border-none bg-white dark:bg-slate-900 shadow-realestate overflow-hidden"}>
                 <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0 border-b border-slate-50 dark:border-slate-800 mb-4">
-                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
-                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <TrendingUp className="h-4 w-4 text-realestate-primary-500" />}
+                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                        {editingId ? <Pencil className="h-4 w-4 text-amber-600" /> : <TrendingUp className="h-4 w-4 text-[#FF4200]" />}
                         {editingId ? "Modificar Objetivo" : "Novo Macro-Objetivo Estratégico"}
                     </CardTitle>
                     {editingId && (
@@ -622,10 +623,10 @@ export function StrategicObjectives() {
                             value={newDesc}
                             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewDesc(e.target.value)}
                             placeholder="Qual o valor de negócio esperado?"
-                            className="bg-white min-h-[80px]"
+                            className="bg-white min-h-[80px] rounded-2xl border-slate-200"
                         />
                     </div>
-                    <Button onClick={handleAdd} className={`w-full md:w-auto font-black uppercase text-xs tracking-[0.2em] gap-2 py-6 px-8 rounded-xl shadow-realestate-lg transition-transform hover:scale-[1.02] active:scale-[0.98] ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gradient-realestate-blue'}`}>
+                    <Button onClick={handleAdd} className={`w-full md:w-auto font-black uppercase text-[10px] tracking-[0.2em] gap-2 py-7 px-10 rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] ${editingId ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-[#001540] hover:bg-[#001540]/90 text-white'}`}>
                         {editingId ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                         {editingId ? "Salvar Alterações" : "Cadastrar no Board"}
                     </Button>

@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
 import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo, Settings } from "lucide-react"
-import { StatCard } from "@/components/ui/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { useSettings } from "@/contexts/SettingsContext"
 
@@ -694,94 +693,139 @@ export function EpicAnalysis() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">{epic.key}: {epic.fields.summary}</h2>
-                    <p className="text-muted-foreground">Deep Dive Analysis</p>
+            <div className="flex flex-col md:flex-row items-baseline justify-between gap-4 mb-2">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-[#FF4200] rounded-xl flex items-center justify-center text-white shadow-lg">
+                        <Target size={24} />
+                    </div>
+                    <div>
+                        <h2 className="text-3xl font-black text-[#001540] dark:text-white tracking-tighter uppercase leading-none">
+                            {epic.key}: <span className="text-[#FF4200]">{epic.fields.summary}</span>
+                        </h2>
+                        <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">Análise Detalhada de Iniciativa</p>
+                    </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                    <form onSubmit={handleSearch} className="flex space-x-2">
-                        <Input
-                            placeholder="Analyze another Epic..."
-                            value={searchKey}
-                            onChange={e => setSearchKey(e.target.value)}
-                            className="w-[200px]"
-                        />
-                        <Button type="submit" size="icon" variant="secondary"><Search className="h-4 w-4" /></Button>
+                <div className="flex items-center gap-3">
+                    <form onSubmit={handleSearch} className="flex gap-2">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Input
+                                placeholder="Analisar outro Epic..."
+                                value={searchKey}
+                                onChange={e => setSearchKey(e.target.value)}
+                                className="pl-9 w-[220px] h-10 rounded-xl border-slate-200"
+                            />
+                        </div>
+                        <Button type="submit" size="sm" className="bg-[#001540] hover:bg-[#001540]/90 text-white rounded-xl px-4 font-bold">TROCAR</Button>
                     </form>
                 </div>
             </div>
 
-            <div className="flex justify-end mb-4 space-x-2">
-                <select className="p-2 border rounded bg-background text-foreground" value={selectedVersion} onChange={(e) => setSelectedVersion(e.target.value)}>
-                    <option value="ALL">All Versions</option>
-                    {allVersions.map(v => <option key={v} value={v}>{v}</option>)}
-                    <option value="Unscheduled">Unscheduled</option>
-                </select>
-                <select className="p-2 border rounded bg-background text-foreground" value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)}>
-                    <option value="ALL">All Periods</option>
-                    <option value="Q1">Q1 (Jan-Mar)</option>
-                    <option value="Q2">Q2 (Apr-Jun)</option>
-                    <option value="Q3">Q3 (Jul-Sep)</option>
-                    <option value="Q4">Q4 (Oct-Dec)</option>
-                </select>
+            <div className="flex flex-wrap items-center gap-3 mb-6">
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+                    <select className="bg-transparent border-none text-[10px] font-black uppercase tracking-wider px-3 py-1 outline-none" value={selectedVersion} onChange={(e) => setSelectedVersion(e.target.value)}>
+                        <option value="ALL">TODAS AS VERSÕES</option>
+                        {allVersions.map(v => <option key={v} value={v}>{v}</option>)}
+                        <option value="Unscheduled">SEM VERSÃO</option>
+                    </select>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+                    <select className="bg-transparent border-none text-[10px] font-black uppercase tracking-wider px-3 py-1 outline-none" value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)}>
+                        <option value="ALL">TODOS OS PERÍODOS</option>
+                        <option value="Q1">Q1 (JAN-MAR)</option>
+                        <option value="Q2">Q2 (ABR-JUN)</option>
+                        <option value="Q3">Q3 (JUL-SET)</option>
+                        <option value="Q4">Q4 (OUT-DEZ)</option>
+                    </select>
+                </div>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-                <Card className="col-span-2 shadow-realestate border-none bg-white dark:bg-slate-900 border-l-4 border-realestate-primary-500 overflow-hidden">
-                    <CardContent className="pt-6 relative">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Alcance do Epic</span>
-                            <Target className="h-4 w-4 text-realestate-primary-500" />
-                        </div>
-                        <div className="flex items-center gap-6">
-                            <div className="relative h-24 w-24">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={[{ value: percentComplete }, { value: 100 - percentComplete }]}
-                                            cx="50%" cy="50%"
-                                            innerRadius={35}
-                                            outerRadius={45}
-                                            startAngle={90} endAngle={-270}
-                                            dataKey="value"
-                                            stroke="none"
-                                        >
-                                            <Cell fill="#3b82f6" /><Cell fill="#e2e8f0" className="dark:fill-slate-800" />
-                                        </Pie>
-                                    </PieChart>
-                                </ResponsiveContainer>
-                                <div className="absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2 text-center">
-                                    <span className="text-xl font-black text-slate-800 dark:text-white">{percentComplete}%</span>
-                                </div>
-                            </div>
-                            <div className="flex-1 space-y-1">
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">Progresso Geral</p>
-                                <p className="text-xs text-slate-400 font-medium">Baseado em {allMajorIssues.length} itens majoritários</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
+                {/* 1. ITENS TOTAIS */}
+                <div className="bg-[#001540] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50">
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Itens Totais</p>
+                        <ListTodo size={16} className="text-white/30" />
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                        <h2 className="text-5xl font-black leading-none">{children.length + globalSubtaskCount}</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">Ativos no Jira</p>
+                </div>
 
-                <StatCard
-                    title="Entregues"
-                    value={majorDone}
-                    icon={Zap}
-                    gradient="green"
-                    trend={{ value: Math.round((majorDone / (majorIssuesFiltered.length || 1)) * 100), isPositive: true }}
-                />
-                <StatCard
-                    title="Em Andamento"
-                    value={majorInProgress}
-                    icon={TrendingUp}
-                    gradient="blue"
-                />
-                <StatCard
-                    title="Pendentes"
-                    value={majorToDo}
-                    icon={Clock}
-                    gradient="orange"
-                />
+                {/* 2. HISTÓRIAS */}
+                <div className="bg-[#001540] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50 relative overflow-hidden">
+                    <div className="absolute right-0 top-0 p-4 opacity-10">
+                        <TrendingUp size={64} />
+                    </div>
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Histórias</p>
+                        <Sparkles size={16} className="text-[#FF4200]" />
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                        <h2 className="text-5xl font-black leading-none">{globalStoryCount}</h2>
+                        <span className="text-lg font-black text-white/60">/{globalStoryCount + globalTaskCount}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full mt-4 overflow-hidden">
+                        <div className="h-full bg-[#FF4200] transition-all duration-1000" style={{ width: `${Math.round((globalStoryCount / (globalStoryCount + globalTaskCount || 1)) * 100)}%` }} />
+                    </div>
+                </div>
+
+                {/* 3. TICKETS & SUBS */}
+                <div className="bg-[#F8FAFC] dark:bg-slate-900 p-6 rounded-[32px] text-[#001540] dark:text-white flex flex-col justify-between border border-slate-100 dark:border-slate-800 shadow-lg shadow-slate-100/50 group">
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tickets & Subs</p>
+                        <Zap size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
+                    </div>
+                    <div>
+                        <h2 className="text-5xl font-black leading-none">{globalSubtaskCount}</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 mt-3 uppercase tracking-wider">Subtarefas Técnicas</p>
+                </div>
+
+                {/* 4. ESFORÇO CONSUMIDO */}
+                <div className="bg-[#10B981] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-emerald-200/50 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700" />
+                    <div className="flex justify-between items-start mb-4 relative z-10">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Esforço Consumido</p>
+                        <Clock size={16} className="text-white/40" />
+                    </div>
+                    <div className="relative z-10">
+                        <h2 className="text-4xl font-black leading-none">{totalSpentHours}h</h2>
+                        <p className="text-[10px] font-bold text-white/50 mt-1 uppercase">De {totalEstimateHours}h Est.</p>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/20 rounded-full mt-4 overflow-hidden relative z-10">
+                        <div className="h-full bg-white transition-all duration-1000" style={{ width: `${timeProgress}%` }} />
+                    </div>
+                </div>
+
+                {/* 5. SAÚDE DA INICIATIVA */}
+                <div className="bg-[#8B5CF6] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-purple-200/50 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700" />
+                    <div className="flex justify-between items-start mb-4 relative z-10">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Saúde da Iniciativa</p>
+                        <TrendingUp size={16} className="text-white/40" />
+                    </div>
+                    <div className="relative z-10">
+                        <h2 className="text-5xl font-black leading-none">94%</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">On-Track</p>
+                </div>
+
+                {/* 6. PROGRESSO GERAL (ORANGE) */}
+                <div className="bg-[#FF4200] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-orange-200/50 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700" />
+                    <div className="flex justify-between items-start mb-4 relative z-10">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Progresso Geral</p>
+                        <Target size={16} className="text-white/40" />
+                    </div>
+                    <div className="relative z-10">
+                        <h2 className="text-6xl font-black leading-none">{percentComplete}%</h2>
+                    </div>
+                    <div className="w-full h-2 bg-white/20 rounded-full mt-4 overflow-hidden relative z-10">
+                        <div className="h-full bg-white transition-all duration-1000" style={{ width: `${percentComplete}%` }} />
+                    </div>
+                </div>
             </div>
 
             <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
@@ -801,10 +845,10 @@ export function EpicAnalysis() {
                 ))}
             </div>
 
-            <Card className="shadow-realestate border-none bg-white dark:bg-slate-900 border-t-4 border-realestate-primary-500 overflow-hidden">
+            <Card className="shadow-none border-none bg-white dark:bg-slate-900 border-t-4 border-[#FF4200] overflow-hidden">
                 <CardHeader className="pb-2">
                     <CardTitle className="text-lg font-black flex items-center gap-2 text-slate-700 dark:text-slate-200">
-                        <Clock className="w-5 h-5 text-realestate-primary-500" /> Painel de Esforço (Time Tracking)
+                        <Clock className="w-5 h-5 text-[#FF4200]" /> Painel de Esforço (Time Tracking)
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -818,12 +862,12 @@ export function EpicAnalysis() {
                                 </div>
                             </div>
                             <div className="text-right">
-                                <span className={`text-sm font-black ${timeProgress > 90 ? 'text-rose-500' : 'text-realestate-primary-500'}`}>{timeProgress}%</span>
+                                <span className={`text-sm font-black ${timeProgress > 90 ? 'text-rose-500' : 'text-[#FF4200]'}`}>{timeProgress}%</span>
                             </div>
                         </div>
                         <div className="relative h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
                             <div
-                                className={`h-full transition-all duration-1000 ${timeProgress > 90 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 'bg-gradient-to-r from-realestate-primary-500 to-realestate-primary-600'}`}
+                                className={`h-full transition-all duration-1000 ${timeProgress > 90 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 'bg-gradient-to-r from-[#FF4200] to-[#E63B00]'}`}
                                 style={{ width: `${Math.min(100, timeProgress)}%` }}
                             />
                         </div>
@@ -1004,10 +1048,10 @@ export function EpicAnalysis() {
                 </Card>
             </div>
 
-            <Card className="shadow-realestate border-none bg-white dark:bg-slate-900 overflow-hidden">
+            <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
                 <CardHeader className="border-b border-slate-50 dark:border-slate-800">
                     <CardTitle className="text-lg font-black flex items-center gap-2 text-slate-700 dark:text-slate-200 uppercase tracking-tight">
-                        <ListTodo className="w-5 h-5 text-realestate-primary-500" /> Detalhamento de Atividades
+                        <ListTodo className="w-5 h-5 text-[#FF4200]" /> Detalhamento de Atividades
                     </CardTitle>
                     <CardDescription className="text-slate-400 font-medium">Lista completa de Stories, Tasks e Subtasks vinculadas</CardDescription>
                 </CardHeader>
@@ -1017,7 +1061,7 @@ export function EpicAnalysis() {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </div >
     )
 }
 
@@ -1034,7 +1078,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                 onClick={() => setExpanded(!expanded)}
             >
                 <div className="flex items-center space-x-3 flex-grow">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white dark:bg-slate-800 text-slate-400 shadow-sm border border-slate-100 dark:border-slate-700 group-hover:bg-realestate-primary-50 dark:group-hover:bg-realestate-primary-900/30 group-hover:text-realestate-primary-500 transition-all">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white dark:bg-slate-800 text-slate-400 shadow-sm border border-slate-100 dark:border-slate-700 group-hover:bg-orange-50 dark:group-hover:bg-orange-900/30 group-hover:text-[#FF4200] transition-all">
                         {hasSubtasks ? (expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <ListTodo size={14} />}
                     </div>
                     <div className="space-y-1 flex-grow">
@@ -1050,7 +1094,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                                     url = url.replace(/\/$/, "");
                                     if (url) window.open(`${url}/browse/${task.key}`, '_blank')
                                 }}
-                                className="text-slate-300 hover:text-realestate-primary-500 transition-colors p-1"
+                                className="text-slate-300 hover:text-[#FF4200] transition-colors p-1"
                             >
                                 <ExternalLink size={12} />
                             </button>
@@ -1084,7 +1128,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                             return (
                                 <div key={sub.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800/50 transition-colors group/sub">
                                     <div className="flex items-center gap-3 flex-grow text-xs">
-                                        <span className="text-[10px] font-black text-slate-300 group-hover/sub:text-realestate-primary-400">{sub.key}</span>
+                                        <span className="text-[10px] font-black text-slate-300 group-hover/sub:text-orange-400">{sub.key}</span>
                                         <span className="text-slate-600 dark:text-slate-400 font-medium">{sub.fields.summary}</span>
                                         <button
                                             onClick={(e) => {
@@ -1095,7 +1139,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                                                 url = url.replace(/\/$/, "");
                                                 if (url) window.open(`${url}/browse/${sub.key}`, '_blank')
                                             }}
-                                            className="text-slate-300 hover:text-realestate-primary-500 transition-colors p-1"
+                                            className="text-slate-300 hover:text-[#FF4200] transition-colors p-1"
                                         >
                                             <ExternalLink size={10} />
                                         </button>

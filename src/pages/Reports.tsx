@@ -54,11 +54,11 @@ export default function Reports() {
         const totalProgress = activeEpics.reduce((acc, e) => acc + (e.progress ?? 0), 0)
         const avgProgress = totalInitiatives > 0 ? Math.round(totalProgress / totalInitiatives) : 0
 
-        // Mocking/Simplifying quarterly for reports
+        // Mocking quarterly for reports - using ION branding colors
         const qData = [
-            { quarter: 'Q1', count: 12, color: '#3B82F6' },
-            { quarter: 'Q2', count: 18, color: '#10B981' },
-            { quarter: 'Q3', count: 15, color: '#F59E0B' },
+            { quarter: 'Q1', count: 12, color: '#001540' },
+            { quarter: 'Q2', count: 18, color: '#FF4200' },
+            { quarter: 'Q3', count: 15, color: '#10B981' },
             { quarter: 'Q4', count: 8, color: '#8B5CF6' },
         ]
 
@@ -84,26 +84,26 @@ export default function Reports() {
     const reportCards = [
         {
             id: 'strategic',
-            title: 'Relatório de Objetivos Estratégicos',
-            description: 'Visão completa dos objetivos macro, iniciativas vinculadas e progresso apurado.',
+            title: 'Apuração Estratégica (Macro)',
+            description: 'Visão completa dos objetivos macro, iniciativas vinculadas e progresso apurado com KPIs ION.',
             icon: Target,
-            color: 'text-emerald-500',
-            bg: 'bg-emerald-50 dark:bg-emerald-950/20',
+            color: 'text-[#FF4200]',
+            bg: 'bg-orange-50 dark:bg-orange-950/20',
             action: () => setShowStrategicReport(true)
         },
         {
             id: 'dashboard',
-            title: 'Resumo Executivo (Dashboard)',
-            description: 'Snapshop dos KPIs de performance, conclusão trimestral e visão geral de iniciativas.',
+            title: 'Resumo de Performance (Executivo)',
+            description: 'Snapshot dos KPIs de performance, conclusão trimestral e visão geral de iniciativas.',
             icon: LayoutDashboard,
-            color: 'text-blue-500',
-            bg: 'bg-blue-50 dark:bg-blue-950/20',
+            color: 'text-[#001540] dark:text-blue-400',
+            bg: 'bg-slate-50 dark:bg-slate-900/50',
             action: () => setShowExecutiveReport(true)
         },
         {
             id: 'okr',
-            title: 'Acompanhamento de OKRs 2025',
-            description: 'Detalhamento por KR, confiança de entrega e status RAG de cada iniciativa.',
+            title: 'OKR Tracking 2025',
+            description: 'Detalhamento por KR, confiança de entrega e status RAG de cada iniciativa estratégica.',
             icon: BarChart3,
             color: 'text-purple-500',
             bg: 'bg-purple-50 dark:bg-purple-950/20',
@@ -113,47 +113,47 @@ export default function Reports() {
 
     if (loading) return (
         <div className="flex items-center justify-center min-h-[400px]">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF4200]"></div>
         </div>
     )
 
     return (
         <div className="space-y-8 p-6 max-w-6xl mx-auto">
             <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
+                <div className="flex items-center gap-4">
+                    <div className="p-3 bg-[#FF4200] rounded-2xl shadow-lg shadow-orange-100 dark:shadow-none">
                         <FileBarChart className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-black tracking-tight text-slate-800 dark:text-white uppercase">
+                        <h2 className="text-3xl font-black tracking-tighter text-[#001540] dark:text-white uppercase leading-none">
                             {t('sidebar.reports', 'Centro de Relatórios')}
                         </h2>
-                        <p className="text-slate-400 font-medium">{t('reports.subtitle', 'Selecione e gere visões estratégicas para impressão ou envio.')}</p>
+                        <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">{t('reports.subtitle', 'Visões Estratégicas e Consolidação de Resultados')}</p>
                     </div>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {reportCards.map((report) => (
-                    <Card key={report.id} className="group hover:shadow-xl transition-all duration-300 border-slate-100 dark:border-slate-800 overflow-hidden">
-                        <CardHeader className={`${report.bg} border-b border-slate-100 dark:border-slate-800 transition-colors`}>
+                    <Card key={report.id} className="group hover:shadow-2xl transition-all duration-500 border-none bg-white dark:bg-slate-900 overflow-hidden rounded-[32px] shadow-xl shadow-slate-100/50">
+                        <CardHeader className={`${report.bg} border-b border-white/10 transition-colors pt-8 pb-8`}>
                             <div className="flex justify-between items-start">
-                                <div className={`p-2.5 rounded-xl bg-white dark:bg-slate-900 shadow-sm ${report.color}`}>
-                                    <report.icon size={24} />
+                                <div className={`p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-xl ${report.color}`}>
+                                    <report.icon size={28} />
                                 </div>
-                                <Sparkles className="text-slate-200 dark:text-slate-800 group-hover:text-indigo-400 transition-colors" size={20} />
+                                <Sparkles className="text-white/40 group-hover:text-[#FF4200] transition-colors" size={24} />
                             </div>
-                            <div className="mt-4">
-                                <CardTitle className="text-lg font-bold group-hover:text-indigo-600 transition-colors">{report.title}</CardTitle>
-                                <CardDescription className="mt-2 line-clamp-2">{report.description}</CardDescription>
+                            <div className="mt-6">
+                                <CardTitle className="text-xl font-black text-[#001540] dark:text-white group-hover:text-[#FF4200] transition-colors uppercase tracking-tight">{report.title}</CardTitle>
+                                <CardDescription className="mt-2 font-medium text-slate-500 dark:text-slate-400 leading-relaxed">{report.description}</CardDescription>
                             </div>
                         </CardHeader>
-                        <CardContent className="pt-6">
+                        <CardContent className="pt-6 pb-8">
                             <Button
                                 onClick={report.action}
-                                className="w-full justify-between font-bold bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700 rounded-xl"
+                                className="w-full justify-between font-black bg-[#001540] hover:bg-[#001540]/90 text-white dark:bg-[#FF4200] dark:hover:bg-[#FF4200]/90 h-14 rounded-2xl px-6 group-hover:scale-[1.02] transition-transform"
                             >
-                                Gerar Report <ChevronRight size={18} />
+                                GERAR RELATÓRIO <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                             </Button>
                         </CardContent>
                     </Card>
@@ -178,14 +178,14 @@ export default function Reports() {
                 />
             )}
 
-            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
-                <div className="mx-auto w-12 h-12 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400">
-                    <Printer size={24} />
+            <div className="bg-white dark:bg-slate-900/50 rounded-[32px] p-8 border border-slate-100 dark:border-slate-800 text-center space-y-4 shadow-lg shadow-slate-100/20">
+                <div className="mx-auto w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-[#FF4200] shadow-inner">
+                    <Printer size={32} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300">Dica de Impressão</h3>
-                    <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
-                        Utilize a opção de <strong>Salvar como PDF</strong> no diálogo de impressão para enviar o relatório por e-mail com fidelidade visual.
+                    <h3 className="text-xl font-black text-[#001540] dark:text-white uppercase tracking-tight">Dica de Exportação</h3>
+                    <p className="text-sm text-slate-500 max-w-md mx-auto mt-2 font-medium leading-relaxed">
+                        Para melhor fidelidade, utilize a opção <strong>"Salvar como PDF"</strong>. Nossos relatórios foram otimizados para layouts de página A4 e apresentações executivas.
                     </p>
                 </div>
             </div>

@@ -1,76 +1,34 @@
 export interface JiraIssue {
-    id: string
-    key: string
+    id: string;
+    key: string;
+    progress?: number; // Resolve os erros no StrategicDashboard, OkrAssessment e Reports
+    subtasks?: JiraIssue[];
     fields: {
-        summary: string
+        summary: string;
         status: {
-            name: string
-            statusCategory: {
-                key: string // "new" | "indeterminate" | "done"
-                name: string // "To Do" | "In Progress" | "Done"
-                colorName: string
-            }
-        }
-        issuetype: {
-            name: string // "Epic" | "Story" | "Task" | "Bug"
-            iconUrl: string
-            subtask: boolean
-        }
+            name: string;
+            statusCategory: { key: string; name: string; colorName: string; }
+        };
+        issuetype: { name: string; iconUrl: string; subtask: boolean; };
         assignee: {
-            displayName: string
-            avatarUrls: {
-                "48x48": string
-            }
-        } | null
-        timeoriginalestimate?: number // Seconds
-        timeestimate?: number // Seconds
-        timespent?: number // Seconds
-        aggregatetimespent?: number
-        aggregatetimeoriginalestimate?: number
-        aggregatetimeestimate?: number
-        components?: { name: string }[]
-        labels?: string[]
-        fixVersions?: { name: string, released: boolean, releaseDate?: string }[]
-        subtasks?: any[] // Jira returns simple subtasks in fields
-        created: string
-        updated: string
-        resolutiondate?: string | null
-        duedate?: string | null
-        // Custom fields for Epic Link or Parent
+            displayName: string;
+            avatarUrls: { "48x48": string };
+        } | null;
         parent?: {
-            key: string
-        }
-        customfield_10014?: string // Epic Link (Standard ID)
-        customfield_10016?: number // Story Points
-        progress?: number // Calculated progress (0-100)
-        attachment?: {
-            id: string
-            filename: string
-            content: string
-            thumbnail?: string
-            mimeType: string
-            size: number
-            size_formatted?: string
-        }[]
-    }
-    subtasks?: JiraIssue[] // Children logic
-}
-
-export interface JiraEpic extends JiraIssue {
-    // Specific fields for epics if needed
-    stats?: {
-        done: number
-        inProgress: number
-        toDo: number
-        total: number
-    }
-}
-
-export interface JiraProject {
-    id: string
-    key: string
-    name: string
-    avatarUrls: {
-        "48x48": string
-    }
+            key: string;
+            fields?: { summary: string }
+        };
+        progress?: number;
+        customfield_10016?: number; // Story Points para o cálculo de 25%
+        customfield_10014?: any;
+        aggregatetimespent?: number;
+        timespent?: number;
+        timeoriginalestimate?: number;
+        aggregatetimeoriginalestimate?: number;
+        components?: { name: string }[];
+        resolutiondate?: string;
+        updated?: string;
+        fixVersions?: { name: string }[];
+        subtasks?: any[];
+    };
 }

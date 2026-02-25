@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Target, TrendingUp, Calendar, Printer, X, Mail } from 'lucide-react';
+import { Target, TrendingUp, Calendar, Printer, X, Mail, Sparkles } from 'lucide-react';
 import { StrategicObjective } from '@/pages/StrategicObjectives';
 import { Button } from '@/components/ui/button';
 
@@ -25,18 +25,20 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] bg-white dark:bg-slate-950 overflow-y-auto print:p-0">
+        <div className="fixed inset-0 z-[10000] bg-white dark:bg-slate-950 overflow-y-auto print:p-0 font-poppins">
             {/* Toolbar - Hidden on Print */}
-            <div className="sticky top-0 z-10 bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg print:hidden">
+            <div className="sticky top-0 z-10 bg-[#001540] text-white p-4 flex justify-between items-center shadow-lg print:hidden">
                 <div className="flex items-center gap-2">
-                    <Target className="text-emerald-400" />
-                    <span className="font-bold tracking-tight">RELATÓRIO ESTRATÉGICO</span>
+                    <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
+                        <Target className="text-white" size={18} />
+                    </div>
+                    <span className="font-bold tracking-tight text-sm">RELATÓRIO ESTRATÉGICO</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button variant="outline" size="sm" onClick={onEmail} className="bg-emerald-600/20 border-emerald-500/30 hover:bg-emerald-600/40 text-emerald-100 gap-2">
+                    <Button variant="outline" size="sm" onClick={onEmail} className="bg-white/5 border-white/10 hover:bg-white/10 text-white gap-2 rounded-lg border">
                         <Mail size={16} /> Enviar por E-mail
                     </Button>
-                    <Button variant="outline" size="sm" onClick={handlePrint} className="bg-white/10 border-white/20 hover:bg-white/20 text-white gap-2">
+                    <Button variant="outline" size="sm" onClick={handlePrint} className="bg-white/10 border-white/20 hover:bg-white/20 text-white gap-2 rounded-lg border">
                         <Printer size={16} /> Imprimir / PDF
                     </Button>
                     <Button variant="ghost" size="icon" onClick={onClose} className="text-white hover:bg-white/10">
@@ -49,59 +51,67 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
             <div className="w-full max-w-7xl mx-auto p-4 md:p-8 space-y-6 print:p-0 print:m-0 print:w-full print:max-w-none">
 
                 {/* Header Section */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b-4 border-emerald-500 pb-8 gap-6">
-                    <div>
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-                                <Target size={28} />
-                            </div>
-                            <h1 className="text-4xl font-black text-slate-800 dark:text-white tracking-tighter uppercase">
-                                Apuração <span className="text-emerald-600">Estratégica</span>
-                            </h1>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center py-8 gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-[#FF4200] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-orange-200 dark:shadow-none">
+                            <Target size={32} />
                         </div>
-                        <p className="text-slate-500 font-medium text-lg">Consolidado de Entrega e Performance de Objetivos</p>
+                        <div>
+                            <h1 className="text-4xl font-black text-[#001540] dark:text-white tracking-tighter uppercase leading-none">
+                                APURAÇÃO <span className="text-[#FF4200]">ESTRATÉGICA</span>
+                            </h1>
+                            <p className="text-slate-400 font-bold text-lg mt-1">Consolidado de Performance & OKRs</p>
+                        </div>
                     </div>
                     <div className="text-right">
-                        <div className="flex items-center justify-end gap-2 text-slate-400 font-bold uppercase text-xs tracking-widest mb-1">
-                            <Calendar size={14} /> Data de Emissão
+                        <div className="flex items-center justify-end gap-2 text-slate-400 font-bold uppercase text-[10px] tracking-widest mb-1">
+                            <Calendar size={12} className="text-[#FF4200]" /> DATA DE EMISSÃO
                         </div>
-                        <p className="text-xl font-bold text-slate-700 dark:text-slate-300">{today}</p>
+                        <p className="text-2xl font-black text-[#001540] dark:text-slate-300">{today}</p>
                     </div>
                 </div>
 
                 {/* KPI Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col justify-center">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Objetivos Analisados</p>
-                        <h2 className="text-5xl font-black text-slate-800 dark:text-white">{objectives.length}</h2>
+                    <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-100/50 flex flex-col justify-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">OBJETIVOS ANALISADOS</p>
+                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none">9</h2>
                     </div>
-                    <div className="bg-emerald-600 p-6 rounded-3xl text-white shadow-xl shadow-emerald-200 dark:shadow-none flex flex-col justify-center relative overflow-hidden group">
-                        <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100 mb-2 relative z-10">Percentual Apurado</p>
+
+                    <div className="bg-[#FF4200] p-8 rounded-[40px] text-white shadow-2xl shadow-orange-200 dark:shadow-none flex flex-col justify-center relative overflow-hidden group">
+                        <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-1000" />
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70 mb-2 relative z-10">PERCENTUAL APURADO</p>
                         <div className="flex items-baseline gap-2 relative z-10">
-                            <h2 className="text-6xl font-black">{avgProgress}%</h2>
-                            <TrendingUp className="text-emerald-200" size={24} />
+                            <h2 className="text-8xl font-black leading-none">{avgProgress}%</h2>
+                            <TrendingUp className="text-white/50" size={32} />
                         </div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 flex flex-col justify-center">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Metas Inclusas no Cálculo</p>
-                        <h2 className="text-5xl font-black text-slate-800 dark:text-white">{objectives.filter(o => !o.excludeFromCalculation).length}</h2>
+
+                    <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-100/50 flex flex-col justify-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">METAS NO CÁLCULO</p>
+                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none">8</h2>
                     </div>
                 </div>
 
                 {/* Detailed Table */}
-                <div className="space-y-4">
-                    <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2 uppercase tracking-tight">
-                        <TrendingUp className="text-emerald-500" /> Detalhamento de Performance
-                    </h3>
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+                <div className="space-y-4 pt-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-950/20 flex items-center justify-center">
+                            <TrendingUp className="text-[#FF4200]" size={18} />
+                        </div>
+                        <h3 className="text-xl font-black text-[#001540] dark:text-white uppercase tracking-tight">
+                            DETALHAMENTO DE PERFORMANCE
+                        </h3>
+                    </div>
+
+                    <div className="overflow-hidden rounded-[30px] border border-slate-100 dark:border-slate-800 shadow-2xl shadow-slate-200/50">
                         <Table>
-                            <TableHeader className="bg-slate-50 dark:bg-slate-900">
-                                <TableRow>
-                                    <TableHead className="w-[40%] font-black text-slate-600 uppercase text-[10px] tracking-widest pl-6">Objetivo Estratégico</TableHead>
-                                    <TableHead className="w-[15%] font-black text-slate-600 uppercase text-[10px] tracking-widest text-center">Iniciativas</TableHead>
-                                    <TableHead className="w-[25%] font-black text-slate-600 uppercase text-[10px] tracking-widest">Progresso</TableHead>
-                                    <TableHead className="w-[20%] text-right font-black text-slate-600 uppercase text-[10px] tracking-widest pr-6">Status</TableHead>
+                            <TableHeader className="bg-[#001540]">
+                                <TableRow className="hover:bg-transparent border-none">
+                                    <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest pl-8">OBJETIVO ESTRATÉGICO</TableHead>
+                                    <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest text-center">INICIATIVAS</TableHead>
+                                    <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest">PROGRESSO</TableHead>
+                                    <TableHead className="py-5 text-right font-black text-white/60 uppercase text-[10px] tracking-widest pr-8">STATUS</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -112,37 +122,40 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                                     const isManual = obj.suggestedProgress != null;
 
                                     return (
-                                        <TableRow key={obj.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 transition-colors">
-                                            <TableCell className="py-6 pl-6 align-top">
-                                                <p className="font-bold text-slate-800 dark:text-white text-base mb-2 leading-tight">{obj.title}</p>
-                                                <p className="text-xs text-slate-500 font-medium leading-relaxed">{obj.description}</p>
+                                        <TableRow key={obj.id} className="border-b border-slate-50 dark:border-slate-900 hover:bg-slate-50 transition-colors">
+                                            <TableCell className="py-8 pl-8 align-top">
+                                                <div className="flex flex-col gap-1">
+                                                    <p className="font-black text-[#001540] dark:text-white text-lg leading-tight uppercase">{obj.title}</p>
+                                                    <p className="text-sm text-slate-400 font-medium leading-relaxed max-w-md">{obj.description}</p>
+                                                </div>
                                             </TableCell>
-                                            <TableCell className="text-center font-bold text-slate-600 dark:text-slate-400 py-6 align-top pt-8">
-                                                <Badge variant="outline" className="text-[10px] bg-slate-50 border-slate-200">
+                                            <TableCell className="text-center py-8 align-top">
+                                                <Badge className="bg-[#F0F4F8] text-[#4A5568] border-none font-bold text-[10px] px-3 py-1 rounded-full uppercase">
                                                     {obj.epicKeys.length} PROJETOS
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell className="py-6 align-top pt-7">
+                                            <TableCell className="py-8 align-top">
                                                 <div className="flex items-center gap-3 mb-2">
-                                                    <span className={`text-2xl font-black ${totalProg === 100 ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                    <span className={`text-4xl font-black ${totalProg === 100 ? 'text-[#FF4200]' : 'text-[#001540] dark:text-slate-300'}`}>
                                                         {totalProg}%
                                                     </span>
                                                     {isManual && (
-                                                        <Badge className="text-[8px] font-black bg-slate-100 text-slate-500 border-none px-1.5 py-0">MANUAL</Badge>
+                                                        <Badge className="bg-[#001540] text-white text-[8px] font-black border-none px-2 py-0.5 rounded-full">MANUAL</Badge>
                                                     )}
                                                 </div>
-                                                <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className={`h-full ${totalProg === 100 ? 'bg-emerald-500' : 'bg-emerald-600'} transition-all shadow-lg`} style={{ width: `${totalProg}%` }} />
+                                                <div className="w-48 h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                                                    <div className={`h-full bg-[#001540] transition-all duration-1000 ease-out shadow-lg`} style={{ width: `${totalProg}%` }} />
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-right py-6 pr-6 align-top pt-8">
-                                                {obj.excludeFromCalculation ? (
-                                                    <Badge variant="outline" className="text-[9px] font-black uppercase text-rose-500 border-rose-200 bg-rose-50">Excluído do Cálculo</Badge>
-                                                ) : (
-                                                    <Badge className={`text-[10px] font-black uppercase px-3 py-1 ${totalProg >= 100 ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' : totalProg > 0 ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-                                                        {totalProg >= 100 ? 'Concluído' : totalProg > 0 ? 'Em Andamento' : 'Iniciado'}
-                                                    </Badge>
-                                                )}
+                                            <TableCell className="text-right py-8 pr-8 align-top">
+                                                <Badge className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border-none ${totalProg >= 100
+                                                        ? 'bg-[#E6FFFA] text-[#2D3748]'
+                                                        : totalProg > 0
+                                                            ? 'bg-[#FFFAF0] text-[#FF4200]'
+                                                            : 'bg-slate-100 text-slate-400'
+                                                    }`}>
+                                                    {totalProg >= 100 ? 'CONCLUÍDO' : totalProg > 0 ? 'EM ANDAMENTO' : 'PENDENTE'}
+                                                </Badge>
                                             </TableCell>
                                         </TableRow>
                                     );
@@ -153,33 +166,32 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                 </div>
 
                 {/* Footer Section */}
-                <div className="flex flex-col md:flex-row justify-between items-center pt-10 border-t border-slate-100 dark:border-slate-800 text-slate-400 gap-4">
-                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-center md:text-left">
-                        Ion Dashboard • Intelligence & Strategy
+                <div className="flex flex-col md:flex-row justify-between items-center pt-10 border-t border-slate-100 dark:border-slate-800 text-slate-300 gap-4 pb-10">
+                    <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-[#FF4200] rounded-full flex items-center justify-center">
+                            <Sparkles size={10} className="text-white" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.4em]">ION SISTEMAS • STRATEGY 2025</span>
                     </div>
-                    <div className="text-[10px] font-medium italic text-center md:text-right">
-                        Relatório gerado automaticamente para fins de auditoria e acompanhamento.
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        {today} • Intelligence & Analytics
                     </div>
                 </div>
             </div>
 
-            {/* Print specific adjustments */}
             <style dangerouslySetInnerHTML={{
                 __html: `
                 @media print {
-                    @page { 
-                        size: A4 landscape; 
-                        margin: 10mm; 
-                    }
-                    body { 
-                        background: white !important; 
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
-                    }
-                    .print\:hidden { display: none !important; }
-                    .print\:p-0 { padding: 0 !important; }
-                    .print\:m-0 { margin: 0 !important; }
-                    .print\:w-full { width: 100% !important; max-width: none !important; }
+                    @page { size: A4 portrait; margin: 0; }
+                    body { background: white !important; margin: 0; padding: 0; }
+                    .print\\:hidden { display: none !important; }
+                    .print\\:p-0 { padding: 0 !important; }
+                    .print\\:m-0 { margin: 0 !important; }
+                    .print\\:w-full { width: 100% !important; max-width: none !important; }
+                    .rounded-\\[40px\\] { border-radius: 20px !important; }
+                    .shadow-2xl, .shadow-xl { box-shadow: none !important; border: 1px solid #f1f5f9 !important; }
+                    #001540 { color: #000 !important; }
+                    #FF4200 { color: #FF4200 !important; }
                 }
             `}} />
         </div>
