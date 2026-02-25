@@ -208,6 +208,19 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
     const userId = auth?.uid || 'anonymous';
     logger.info(`[fetchEpicData] User ${userId} requesting epic: ${epicKey}, forceRefresh: ${forceRefresh}`);
 
+    // LOCAL EMULATOR MOCK (CHANGE-2046)
+    if (process.env.FUNCTIONS_EMULATOR === 'true' && epicKey === 'DEVOPS-633') {
+        logger.info(`[fetchEpicData] EMULATOR DETECTED: Returning mock data for ${epicKey}`);
+        try {
+            const mockData = require('./raw_epic_data_fixed.json');
+            if (mockData && mockData.result) {
+                return mockData.result;
+            }
+        } catch (e) {
+            logger.warn(`[fetchEpicData] Mock data file not found or invalid: ${e.message}`);
+        }
+    }
+
     try {
         // Check cache first (unless forceRefresh)
         if (!forceRefresh) {
@@ -453,7 +466,7 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
         while (true) {
             const childrenBody = {
                 jql: jql,
-                fields: ["summary", "status", "issuetype", "assignee", "timeoriginalestimate", "timeestimate", "timespent", "components", "created", "updated", "resolutiondate", "duedate", "parent", "customfield_10014", "attachment", "fixVersions", "priority", "aggregatetimespent", "aggregatetimeoriginalestimate", "aggregatetimeestimate", "issuelinks"],
+                fields: ["summary", "status", "issuetype", "assignee", "timeoriginalestimate", "timeestimate", "timespent", "components", "created", "updated", "resolutiondate", "duedate", "parent", "customfield_10014", "customfield_10016", "attachment", "fixVersions", "priority", "aggregatetimespent", "aggregatetimeoriginalestimate", "aggregatetimeestimate", "issuelinks"],
                 maxResults: 100, // Reduced from 1000 to be safe
                 startAt: startAtChildren
             };
@@ -591,7 +604,14 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
             children: children.map(child => {
                 const subtasks = subtasksMap[child.key] || [];
                 const doneSubtasks = subtasks.filter(s => s.fields.status?.statusCategory?.key === 'done').length;
-                const progress = subtasks.length > 0 ? Math.round((doneSubtasks / subtasks.length) * 100) : 0;
+
+                // LOGIC FIX: Done stories should ALWAYS be 100% (CHANGE-2046)
+                let progress = 0;
+                if (child.fields.status?.statusCategory?.key === 'done') {
+                    progress = 100;
+                } else if (subtasks.length > 0) {
+                    progress = Math.round((doneSubtasks / subtasks.length) * 100);
+                }
 
                 return {
                     id: child.id,
@@ -653,6 +673,25 @@ exports.fetchStrategicObjectives = onCall({ timeoutSeconds: 300, memory: '512MiB
 
     // Use logger instead of console.log for v2
     logger.info(`[fetchStrategicObjectives] User ${auth.uid}, project: ${projectKey}, forceRefresh: ${forceRefresh}`);
+
+    // LOCAL EMULATOR MOCK (CHANGE-2046)
+    if (process.env.FUNCTIONS_EMULATOR === 'true') {
+        logger.info(`[fetchStrategicObjectives] EMULATOR DETECTED: Returning mock objective list`);
+        return {
+            objectives: [
+                {
+                    key: 'DEVOPS-633',
+                    fields: {
+                        summary: '[OKR] Atividades priorizadas - Ciclo de 2025',
+                        status: { name: 'Em Progresso', statusCategory: { key: 'indeterminate' } },
+                        description: 'Mock Epic for DEVOPS-633',
+                        created: new Date().toISOString(),
+                        updated: new Date().toISOString()
+                    }
+                }
+            ]
+        };
+    }
 
     try {
         // Check cache with project key

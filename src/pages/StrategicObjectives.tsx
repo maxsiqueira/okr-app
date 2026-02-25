@@ -314,56 +314,55 @@ export function StrategicObjectives() {
                     </Button>
                 </div>
             </div>
-        </div>
             {
-        errorMsg && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-r shadow-sm">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                        <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
+                errorMsg && (
+                    <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-r shadow-sm">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm text-red-700">
+                                    {errorMsg}
+                                </p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="ml-3">
-                        <p className="text-sm text-red-700">
-                            {errorMsg}
-                        </p>
-                    </div>
-                </div>
+                )
+            }
+
+            {/* Strategic Report Overlay */}
+            {
+                showReport && (
+                    <StrategicReport
+                        objectives={objectives}
+                        epicData={epicData}
+                        avgProgress={avgProgress}
+                        onClose={() => setShowReport(false)}
+                    />
+                )
+            }
+
+            {/* KPI Board */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <StatCard
+                    title="Quantidade de Metas"
+                    value={totalMetas}
+                    icon={ListTodo}
+                    gradient="blue"
+                    className="h-32"
+                />
+                <StatCard
+                    title="Percentual Apurado (Metas Ativas)"
+                    value={`${avgProgress}%`}
+                    icon={Zap}
+                    gradient="purple"
+                    trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
+                    className="h-32"
+                />
             </div>
-        )
-    }
 
-    {/* Strategic Report Overlay */ }
-    {
-        showReport && (
-            <StrategicReport
-                objectives={objectives}
-                epicData={epicData}
-                avgProgress={avgProgress}
-                onClose={() => setShowReport(false)}
-            />
-        )
-    }
-
-    {/* KPI Board */ }
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <StatCard
-            title="Quantidade de Metas"
-            value={totalMetas}
-            icon={ListTodo}
-            gradient="blue"
-            className="h-32"
-        />
-        <StatCard
-            title="Percentual Apurado (Metas Ativas)"
-            value={`${avgProgress}%`}
-            icon={Zap}
-            gradient="purple"
-            trend={{ value: avgProgress, isPositive: avgProgress > 50 }}
-            className="h-32"
-        />
-    </div>
-
-    {/* AI Analyst Integration */ }
+            {/* AI Analyst Integration */}
             <AiInsightsSection
                 epics={rawJiraEpics}
                 strategicObjectives={objectives}
@@ -633,56 +632,56 @@ export function StrategicObjectives() {
                 </CardContent>
             </Card>
 
-    {/* Team Management Modal */ }
-    {
-        showTeamManager && (
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <Card className="w-full max-w-md shadow-2xl">
-                    <CardHeader className="border-b">
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg">Gerenciar Times Responsáveis</CardTitle>
-                            <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(false)}>
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="pt-4 space-y-4">
-                        <form
-                            className="flex gap-2"
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                const form = e.target as HTMLFormElement;
-                                const input = form.elements.namedItem('teamName') as HTMLInputElement;
-                                handleTeamAdd(input.value);
-                                input.value = '';
-                            }}
-                        >
-                            <Input name="teamName" placeholder="Nome do novo time..." className="bg-white" />
-                            <Button type="submit" size="sm" className="font-bold">ADC</Button>
-                        </form>
-                        <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 border rounded bg-slate-50">
-                            {teams.map(t => (
-                                <div key={t.id} className="flex items-center gap-2 px-2 py-1 bg-white border rounded shadow-sm text-xs font-bold">
-                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-                                    <span>{t.name}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleTeamDelete(t.id)}
-                                        className="ml-1 text-slate-400 hover:text-red-500"
-                                    >
-                                        <Trash2 className="h-3 w-3" />
-                                    </button>
+            {/* Team Management Modal */}
+            {
+                showTeamManager && (
+                    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <Card className="w-full max-w-md shadow-2xl">
+                            <CardHeader className="border-b">
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-lg">Gerenciar Times Responsáveis</CardTitle>
+                                    <Button variant="ghost" size="sm" onClick={() => setShowTeamManager(false)}>
+                                        <X className="h-4 w-4" />
+                                    </Button>
                                 </div>
-                            ))}
-                        </div>
-                        <p className="text-[10px] text-muted-foreground italic">
-                            * Times deletados continuarão aparecendo em objetivos antigos até que sejam editados.
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-        )
-    }
+                            </CardHeader>
+                            <CardContent className="pt-4 space-y-4">
+                                <form
+                                    className="flex gap-2"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const form = e.target as HTMLFormElement;
+                                        const input = form.elements.namedItem('teamName') as HTMLInputElement;
+                                        handleTeamAdd(input.value);
+                                        input.value = '';
+                                    }}
+                                >
+                                    <Input name="teamName" placeholder="Nome do novo time..." className="bg-white" />
+                                    <Button type="submit" size="sm" className="font-bold">ADC</Button>
+                                </form>
+                                <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 border rounded bg-slate-50">
+                                    {teams.map(t => (
+                                        <div key={t.id} className="flex items-center gap-2 px-2 py-1 bg-white border rounded shadow-sm text-xs font-bold">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                                            <span>{t.name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleTeamDelete(t.id)}
+                                                className="ml-1 text-slate-400 hover:text-red-500"
+                                            >
+                                                <Trash2 className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground italic">
+                                    * Times deletados continuarão aparecendo em objetivos antigos até que sejam editados.
+                                </p>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )
+            }
         </div >
     )
 }

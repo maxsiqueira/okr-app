@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { JiraService } from "@/services/jira-client"
@@ -474,13 +474,29 @@ export function EpicAnalysis() {
     // Correct categorization using subtask field
     const majorIssuesFiltered = activeIssuesFiltered.filter(i => !i.fields.issuetype.subtask)
 
-    // 1. Overall Epic Progress (Jira Logic: Major Done / Total Major)
-    // "Total Major" includes ALL statuses (To Do, In Progress, Done, Cancelled)
-    const allMajorIssues = children.filter(c => !c.fields.issuetype.subtask)
-    const allDoneMajorIssues = allMajorIssues.filter(c => c.fields.status.statusCategory.key === "done").length
-    const percentComplete = allMajorIssues.length > 0
-        ? Math.round((allDoneMajorIssues / allMajorIssues.length) * 100)
-        : 0
+    // 1. Overall Epic Progress (Weighted Average by Story Points)
+    // "Total Major" includes ALL statuses except Cancelled
+    const allMajorIssues = children.filter(c => !c.fields.issuetype.subtask && !c.fields.status.name.toLowerCase().includes("cancel"))
+
+    const percentComplete = useMemo(() => {
+        if (allMajorIssues.length === 0) return 0;
+
+        let totalPoints = 0;
+        let weightedProgress = 0;
+
+        allMajorIssues.forEach(issue => {
+            // Use Story Points (customfield_10016), default to weight 1 if missing
+            const points = issue.fields.customfield_10016 || 1;
+
+            // Progress field is calculated by the backend (includes 100% for Done items)
+            const progress = issue.fields.progress || 0;
+
+            totalPoints += points;
+            weightedProgress += (progress * points);
+        });
+
+        return totalPoints > 0 ? Math.round(weightedProgress / totalPoints) : 0;
+    }, [allMajorIssues]);
 
     // MAJOR METRICS (Lead for KPIs and Charts - Reacts to filters)
     const majorDone = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "done").length
