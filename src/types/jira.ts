@@ -41,8 +41,6 @@ export interface JiraIssue {
             key: string
         }
         customfield_10014?: string // Epic Link (Standard ID)
-        customfield_10016?: number // Story Points
-        progress?: number // Calculated progress (0-100)
         attachment?: {
             id: string
             filename: string
@@ -53,6 +51,7 @@ export interface JiraIssue {
             size_formatted?: string
         }[]
     }
+    progress?: number // Calculated progress (0-100)
     subtasks?: JiraIssue[] // Children logic
 }
 
