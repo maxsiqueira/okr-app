@@ -22,7 +22,7 @@ export function Layout({ children }: { children?: React.ReactNode }) {
                 )}
 
                 {/* Fixed sidebar for mobile, sticky for desktop */}
-                <aside className={`fixed top-14 left-0 z-50 h-[calc(100vh-3.5rem)] w-[240px] border-r bg-background transition-transform md:sticky md:top-14 md:block md:w-full md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <aside className={`fixed top-16 left-0 z-50 h-[calc(100vh-4rem)] w-[240px] border-r bg-background transition-all duration-300 ease-in-out md:sticky md:top-16 md:block md:w-full md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                     <Sidebar onItemClick={() => setIsSidebarOpen(false)} />
                 </aside>
 

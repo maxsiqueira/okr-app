@@ -1,6 +1,6 @@
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
-import { Target, TrendingUp, Printer, X, Rocket, Zap, LayoutDashboard } from 'lucide-react';
+import { Target, TrendingUp, Printer, X, Rocket, Zap, LayoutDashboard, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ExecutiveReportProps {
@@ -10,11 +10,13 @@ interface ExecutiveReportProps {
         q4Deliveries: number;
         successRate: string;
         quarterlyData: any[];
+        year?: number;
     };
     onClose: () => void;
+    onEmail?: () => void;
 }
 
-export const ExecutiveReport: React.FC<ExecutiveReportProps> = ({ data, onClose }) => {
+export const ExecutiveReport: React.FC<ExecutiveReportProps> = ({ data, onClose, onEmail }) => {
     const today = new Date().toLocaleDateString('pt-BR', {
         day: '2-digit',
         month: 'long',
@@ -30,6 +32,9 @@ export const ExecutiveReport: React.FC<ExecutiveReportProps> = ({ data, onClose 
                     <span className="font-bold tracking-tight">RESUMO EXECUTIVO</span>
                 </div>
                 <div className="flex items-center gap-3">
+                    <Button variant="outline" size="sm" onClick={onEmail} className="bg-white/5 border-white/10 hover:bg-white/10 text-white gap-2 rounded-lg border">
+                        <Mail size={16} /> Enviar por E-mail
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => window.print()} className="bg-white/10 border-white/20 hover:bg-white/20 text-white gap-2">
                         <Printer size={16} /> Imprimir / PDF
                     </Button>

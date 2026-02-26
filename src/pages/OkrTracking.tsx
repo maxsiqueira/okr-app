@@ -141,7 +141,7 @@ export function OkrTracking() {
     }
 
     return (
-        <div className="space-y-6 md:space-y-8 p-1 md:p-2">
+        <div className="space-y-8 p-0 md:p-2">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
                     <h2 className="text-2xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-primary to-indigo-600 bg-clip-text text-transparent">

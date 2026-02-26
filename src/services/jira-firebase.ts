@@ -111,10 +111,20 @@ export const callFetchMultipleEpics = async (
                 const epic = val.epic;
                 const children = val.children || [];
 
-                // DATA FIX: Recalculate aggregatetimespent from children
+                // 1. Calculate progress based on "Done" status category (Jira default)
+                // Formula: (Done Issues / Total Issues) * 100
+                // Total includes all major issues (Stories, Tasks, Bugs), including Cancelled ones.
+                const majorIssues = children.filter((child: any) => !child.fields?.issuetype?.subtask);
+                const totalCount = majorIssues.length;
+                const doneCount = majorIssues.filter((child: any) =>
+                    child.fields?.status?.statusCategory?.key === 'done'
+                ).length;
+
+                const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+                // 2. DATA FIX: Recalculate aggregatetimespent from children
                 let trueTotalSeconds = 0;
                 children.forEach((child: any) => {
-                    // Use child's aggregate if available, else timespent
                     let childTime = child.fields.aggregatetimespent;
                     if (childTime === undefined || childTime === null) {
                         childTime = child.fields.timespent || 0;
@@ -122,15 +132,16 @@ export const callFetchMultipleEpics = async (
                     trueTotalSeconds += childTime;
                 });
 
-                // If our calculated total is significantly different/valid, use it.
-                // Assuming Jira's aggregation is broken (615h vs 2000h+), we prefer our sum.
-                // But only if we actually found children.
                 if (children.length > 0) {
                     if (!epic.fields) epic.fields = {};
                     epic.fields.aggregatetimespent = trueTotalSeconds;
                 }
 
-                return epic;
+                return {
+                    ...epic,
+                    progress: progress,
+                    children: children
+                };
             })
             .filter(Boolean);
 
@@ -194,5 +205,20 @@ export const callGetOkrMetrics = async (
     } catch (error: any) {
         console.error(`[Firebase] getOkrMetrics failed:`, error)
         throw new Error(error.message || "Failed to fetch OKR metrics")
+    }
+}
+
+/**
+ * Send email via Firebase Function
+ */
+export const callSendEmail = async (data: { to: string, subject: string, html: string }): Promise<any> => {
+    console.log(`[Firebase] Calling sendEmail to ${data.to}`)
+    const fn = httpsCallable(functions, 'sendEmail')
+    try {
+        const res = await fn(data) as any
+        return res.data
+    } catch (error: any) {
+        console.error(`[Firebase] sendEmail failed:`, error)
+        throw new Error(error.message || "Failed to send email")
     }
 }

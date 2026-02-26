@@ -1,12 +1,50 @@
 import { useEffect, useState, useMemo } from "react"
-import { useSearchParams, useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { JiraService } from "@/services/jira-client"
+import { EmailService } from "@/services/email"
 import { JiraIssue } from "@/types/jira"
 import { db, auth } from "../lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { APP_VERSION, CURRENT_PATCH } from "@/constants/version";
+import { useSettings } from "@/contexts/SettingsContext"
+import { useAuth } from "@/contexts/AuthContext"
+import { useTranslation } from "react-i18next"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+
+import {
+    ChevronDown,
+    ChevronRight,
+    ExternalLink,
+    Search,
+    Clock,
+    Sparkles,
+    TrendingUp,
+    Zap,
+    Target,
+    ListTodo,
+    Settings,
+    Mail
+} from "lucide-react"
+
+import {
+    ResponsiveContainer,
+    Tooltip,
+    Cell,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    PieChart,
+    Pie,
+    Legend
+} from "recharts"
+
 
 const logToFirestore = async (level: string, context: string, message: string, details: any = {}) => {
     try {
@@ -25,16 +63,6 @@ const logToFirestore = async (level: string, context: string, message: string, d
         console.error("Failed to log to Firestore:", err);
     }
 };
-// import { toast } from "sonner" // Sonner not installed
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-
-import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo, Settings } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { useSettings } from "@/contexts/SettingsContext"
-import { Label } from "@/components/ui/label"
-
 
 const TubularBar = (props: any) => {
     const { fill, x, y, width, height, index } = props;
@@ -66,10 +94,10 @@ const TubularBar = (props: any) => {
             </defs>
 
             <path
-                d={`M ${x},${y + topHeight / 2} 
-                   L ${x},${y + height - topHeight / 2} 
-                   A ${width / 2},${topHeight / 2} 0 0 0 ${x + width},${y + height - topHeight / 2} 
-                   L ${x + width},${y + topHeight / 2} 
+                d={`M ${x},${y + topHeight / 2}
+                   L ${x},${y + height - topHeight / 2}
+                   A ${width / 2},${topHeight / 2} 0 0 0 ${x + width},${y + height - topHeight / 2}
+                   L ${x + width},${y + topHeight / 2}
                    A ${width / 2},${topHeight / 2} 0 0 1 ${x},${y + topHeight / 2} Z`}
                 fill={`url(#${gradientId})`}
             />
@@ -121,10 +149,10 @@ const HorizontalTubularBar = (props: any) => {
 
             {/* Main Body */}
             <path
-                d={`M ${x + sideWidth / 2},${y} 
-                   L ${x + width - sideWidth / 2},${y} 
-                   A ${sideWidth / 2},${height / 2} 0 0 1 ${x + width - sideWidth / 2},${y + height} 
-                   L ${x + sideWidth / 2},${y + height} 
+                d={`M ${x + sideWidth / 2},${y}
+                   L ${x + width - sideWidth / 2},${y}
+                   A ${sideWidth / 2},${height / 2} 0 0 1 ${x + width - sideWidth / 2},${y + height}
+                   L ${x + sideWidth / 2},${y + height}
                    A ${sideWidth / 2},${height / 2} 0 0 0 ${x + sideWidth / 2},${y} Z`}
                 fill={`url(#${gradientId})`}
             />
@@ -139,8 +167,8 @@ const HorizontalTubularBar = (props: any) => {
                 stroke={darken(fill, 10)}
                 strokeWidth={0.5}
             />
-            {/* Start Cap (Left) - drawn implicitly or can be explicit if we want "solid" look, 
-                but usually hidden by the "back" of the 3D object unless rotated. 
+            {/* Start Cap (Left) - drawn implicitly or can be explicit if we want "solid" look,
+                but usually hidden by the "back" of the 3D object unless rotated.
                 Let's draw a darker ellipse at the start to simulate depth. */}
             <ellipse
                 cx={x + sideWidth / 2}
@@ -156,6 +184,8 @@ const HorizontalTubularBar = (props: any) => {
 };
 
 export function EpicAnalysis() {
+    const { t } = useTranslation()
+    const { user } = useAuth()
     const { settings, updateEpicAnalysisSettings } = useSettings()
     const [searchParams, setSearchParams] = useSearchParams()
     const navigate = useNavigate()
@@ -187,44 +217,105 @@ export function EpicAnalysis() {
     const queryClient = useQueryClient()
 
     // --- HOOKS MOVED TO TOP (FIXES REACT ERROR #310) ---
-
-    // 1. Overall Epic Progress (Weighted Average by Story Points)
-    // "Total Major" includes ALL statuses except Cancelled
     const allMajorIssues = useMemo(() => {
         if (!data || !data.children) return [];
-        return data.children.filter(c => !c.fields?.issuetype?.subtask && !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
+        return data.children.filter((c: any) => !c.fields?.issuetype?.subtask)
     }, [data]);
 
-    const percentComplete = useMemo(() => {
-        const activeIssues = allMajorIssues.filter(i =>
-            !(i.fields?.status?.name || "").toLowerCase().includes("cancel")
-        );
+    // Define handlers early so they are in scope for early returns (Error/Empty states)
+    const handleEmailAnalysis = async () => {
+        if (!user?.email || !data?.epic) {
+            alert("Erro: Dados não disponíveis.")
+            return
+        }
 
-        if (activeIssues.length === 0) return 0;
+        if (!confirm(`Deseja enviar o relatório de análise do épico ${currentKey} para ${user.email}?`)) return
 
-        let totalProgressSum = 0;
-        let totalWeight = 0;
+        setLoading(true)
+        try {
+            // Need to recalculate based on current filtered state or just use global for simplicity in email
+            // For now, let's use the percentComplete that handles filters later
+            // But we need a way to access it. 
+            // Better: define percentComplete as a variable that we update or calculate inside.
 
-        activeIssues.forEach(i => {
-            const weight = i.fields?.customfield_10016 || 1; // Story Points or 1
-            totalWeight += weight;
+            // To avoid scope issues, we'll use a derived value inside the handler
+            const majorIssues = data.children.filter((c: any) => !c.fields?.issuetype?.subtask);
+            const doneIssues = majorIssues.filter((i: any) => i.fields.status.statusCategory.key === 'done').length;
+            const progress = majorIssues.length > 0 ? Math.round((doneIssues / majorIssues.length) * 100) : 0;
 
-            // Priority 1: Jira's internal progress field
-            let issueProgress = i.fields?.progress?.progress || i.progress || null;
+            const emailHtml = `
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: sans-serif; background-color: #f4f7f9; padding: 40px; color: #001540;">
+                <div style="max-width: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+                    <div style="background-color: #001540; padding: 40px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em;">Análise de Épico</h1>
+                        <p style="color: #FF4200; margin-top: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;">${currentKey} • Intelligence & Analytics</p>
+                    </div>
+                    
+                    <div style="padding: 40px;">
+                        <div style="margin-bottom: 30px;">
+                            <h2 style="font-size: 18px; font-weight: 900; color: #001540; margin: 0;">${data.epic.fields.summary}</h2>
+                            <p style="color: #64748b; font-size: 12px; margin-top: 5px;">Status: <strong>${data.epic.fields.status.name}</strong></p>
+                        </div>
 
-            // Priority 2: Status Category logic
-            if (issueProgress === null) {
-                const statusCat = i.fields.status.statusCategory.key;
-                if (statusCat === 'done') issueProgress = 100;
-                else if (statusCat === 'indeterminate') issueProgress = 50;
-                else issueProgress = 0;
-            }
+                        <div style="display: flex; gap: 20px; margin-bottom: 30px;">
+                            <div style="flex: 1; padding: 25px; background: #f8fafc; border-radius: 24px; text-align: center;">
+                                <div style="font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">Conclusão</div>
+                                <div style="font-size: 40px; font-weight: 900; color: #FF4200;">${progress}%</div>
+                            </div>
+                            <div style="flex: 1; padding: 25px; background: #f8fafc; border-radius: 24px; text-align: center;">
+                                <div style="font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">Tickets Entrega</div>
+                                <div style="font-size: 40px; font-weight: 900; color: #001540;">${doneIssues}/${majorIssues.length}</div>
+                            </div>
+                        </div>
 
-            totalProgressSum += (issueProgress * weight);
-        });
+                        <div style="border-top: 1px solid #f1f5f9; padding-top: 30px;">
+                            <h3 style="font-size: 12px; font-weight: 900; text-transform: uppercase; color: #64748b; margin-bottom: 15px;">Sumário de Tickets</h3>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                ${majorIssues.slice(0, 10).map((i: any) => `
+                                    <tr style="border-bottom: 1px solid #f8fafc;">
+                                        <td style="padding: 12px 0;">
+                                            <div style="font-weight: 700; font-size: 13px; color: #001540;">${i.key}</div>
+                                            <div style="font-size: 11px; color: #64748b;">${i.fields.summary}</div>
+                                        </td>
+                                        <td style="padding: 12px 0; text-align: right;">
+                                            <span style="font-size: 9px; font-weight: 900; padding: 3px 8px; border-radius: 100px; background: ${i.fields.status.statusCategory.key === 'done' ? '#E6FFFA' : '#f8fafc'}; color: ${i.fields.status.statusCategory.key === 'done' ? '#065F46' : '#64748b'}; text-transform: uppercase;">
+                                                ${i.fields.status.name}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                                ${majorIssues.length > 10 ? `<tr><td colspan="2" style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px; font-style: italic;">... e outros ${majorIssues.length - 10} tickets.</td></tr>` : ''}
+                            </table>
+                        </div>
+                    </div>
 
-        return Math.round(totalProgressSum / (totalWeight || 1));
-    }, [allMajorIssues]);
+                    <div style="padding: 30px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 10px; color: #cbd5e1; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase;">
+                        ION DASHBOARD • ANALYTICS ENGINE
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+
+            await EmailService.sendEmail({
+                to: user.email,
+                subject: `Análise de Épico ION: ${currentKey} - ${progress}% Concluído`,
+                text: `Relatório de Performance do Épico ${currentKey}: ${progress}% de alcance.`,
+                html: emailHtml
+            });
+
+            alert("Sucesso! A análise do épico foi enviada para o seu e-mail.")
+        } catch (error: any) {
+            alert(`Falha no envio: ${error.message}`)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+
+
 
     // Sync currentKey with settings if it changes (e.g., updated on another device)
     useEffect(() => {
@@ -608,15 +699,26 @@ export function EpicAnalysis() {
                                 BUILD: 2025-02-26-1543-TICKETS
                             </div>
                             {!missingCredentials && (
-                                <Button
-                                    variant="outline"
-                                    className="h-14 gap-2 border-slate-200 rounded-2xl hover:bg-slate-50 transition-all px-6"
-                                    onClick={() => handleSyncManual()}
-                                    disabled={loading}
-                                >
-                                    <TrendingUp className={`h-5 w-5 text-[#FF4200] ${loading ? "animate-spin" : ""}`} />
-                                    <span className="font-black text-[#FF4200] hidden sm:inline uppercase tracking-tight">SYNC AGORA</span>
-                                </Button>
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        className="h-14 gap-2 border-slate-200 rounded-2xl hover:bg-slate-50 transition-all px-6"
+                                        onClick={() => handleEmailAnalysis()}
+                                        disabled={loading}
+                                    >
+                                        <Mail className={`h-5 w-5 text-[#001540]`} />
+                                        <span className="font-black text-[#001540] hidden sm:inline uppercase tracking-tight">ENVIAR EMAIL</span>
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        className="h-14 gap-2 border-slate-200 rounded-2xl hover:bg-slate-50 transition-all px-6"
+                                        onClick={() => handleSyncManual()}
+                                        disabled={loading}
+                                    >
+                                        <TrendingUp className={`h-5 w-5 text-[#FF4200] ${loading ? "animate-spin" : ""}`} />
+                                        <span className="font-black text-[#FF4200] hidden sm:inline uppercase tracking-tight">SYNC AGORA</span>
+                                    </Button>
+                                </>
                             )}
                         </div>
                     </div>
@@ -745,16 +847,29 @@ export function EpicAnalysis() {
     // UPDATE METRICS TO USE FILTERED LIST (Children + Subtasks)
     const allFilteredIssues = filteredChildren.flatMap((c: any) => [c, ...(c.subtasks || [])])
 
-    const activeIssuesFiltered = allFilteredIssues.filter((c: any) => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
-
-    // Correct categorization using subtask field
-    const majorIssuesFiltered = activeIssuesFiltered.filter((i: any) => !i.fields.issuetype.subtask)
+    // Major Issues for Calculation (Includes Cancelled to match Jira total)
+    const majorIssuesFiltered = allFilteredIssues.filter((i: any) => !i.fields.issuetype.subtask)
 
     // MAJOR METRICS (Lead for KPIs and Charts - Reacts to filters)
     const majorDone = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "done").length
     const majorInProgress = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "indeterminate").length
     const majorToDo = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "new").length
-    const majorCancelled = allFilteredIssues.filter((i: any) => (i.fields?.status?.name || "").toLowerCase().includes("cancel") && !i.fields?.issuetype?.subtask).length
+    const majorCancelled = majorIssuesFiltered.filter((i: any) => (i.fields?.status?.name || "").toLowerCase().includes("cancel")).length
+
+    // PROGRESS CALCULATION (Filtered)
+    const percentComplete = useMemo(() => {
+        // Option 1: Use Jira progress directly if available and NOT filtered
+        if (selectedVersion === "ALL" && selectedQuarter === "ALL" &&
+            data?.epic?.fields?.progress?.percent != null) {
+            return Math.round(data.epic.fields.progress.percent);
+        }
+
+        // Option 2: Calculate from filtered item count
+        return majorIssuesFiltered.length > 0
+            ? Math.round((majorDone / majorIssuesFiltered.length) * 100)
+            : 0;
+    }, [majorDone, majorIssuesFiltered.length, data?.epic?.fields?.progress?.percent, selectedVersion, selectedQuarter]);
+
 
     // SUBTASK METRICS (Secondary details)
     // subDone, subInProgress, subToDo removed as they were not used in UI
@@ -806,7 +921,7 @@ export function EpicAnalysis() {
         totalChildren: children.length,
         allActiveChildren: allActiveChildren.length,
         filteredChildren: filteredChildren.length,
-        activeFilteredChildren: activeIssuesFiltered.length,
+        activeFilteredChildren: majorIssuesFiltered.length,
         issueTypesFound: Array.from(new Set(allActiveChildren.map((c: any) => c.fields.issuetype.name))),
         counters: {
             stories: globalStoryCount,
@@ -947,16 +1062,24 @@ export function EpicAnalysis() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row items-baseline justify-between gap-4 mb-2">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-[#FF4200] rounded-xl flex items-center justify-center text-white shadow-lg">
+            {data?.isStale && (
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-2xl px-4 py-3 flex items-center gap-3 animate-pulse shadow-sm">
+                    <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shrink-0" />
+                    <p className="text-[11px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-tight leading-tight">
+                        <span className="opacity-70">Modo Offline :</span> {data.staleMessage || 'Exibindo dados do cache devido a instabilidade na API Jira.'}
+                    </p>
+                </div>
+            )}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-2">
+                <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-[#FF4200] rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
                         <Target size={24} />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-black text-[#001540] dark:text-white tracking-tighter uppercase leading-none">
+                        <h2 className="text-2xl md:text-3xl font-black text-[#001540] dark:text-white tracking-tighter uppercase leading-none break-all">
                             {epic.key}: <span className="text-[#FF4200]">{epic.fields.summary}</span>
                         </h2>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
                             <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Análise Detalhada</p>
                             {syncStats && (
                                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
@@ -970,46 +1093,31 @@ export function EpicAnalysis() {
                     </div>
                 </div>
 
-                {data?.isStale && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2 flex items-center gap-3 animate-pulse">
-                        <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                        <p className="text-[11px] font-black text-amber-700 uppercase tracking-tight">
-                            Modo Offline: {data.staleMessage || 'Exibindo dados do cache devido a instabilidade no Jira.'}
-                        </p>
-                    </div>
-                )}
-
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-10 gap-2 border-[#FF4200]/30 bg-orange-50/50 hover:bg-orange-100/50 rounded-xl transition-all"
-                        onClick={() => {
-                            handleSyncManual()
-                            const extraKeysStr = localStorage.getItem("extra_epics") || ""
-                            if (extraKeysStr) {
-                                // Extra epics are reactive to Settings changes
-                            }
-                        }}
+                        className="h-10 gap-2 border-[#FF4200]/30 bg-orange-50/50 hover:bg-orange-100/50 rounded-xl transition-all font-black"
+                        onClick={() => handleSyncManual()}
                         disabled={loading}
                     >
                         <TrendingUp className={`h-4 w-4 text-[#FF4200] ${loading ? "animate-spin" : ""}`} />
-                        <span className="text-[11px] font-black text-[#FF4200] uppercase tracking-wider">Sincronizar Jira</span>
+                        <span className="text-[11px] uppercase tracking-wider">Sincronizar Jira</span>
                     </Button>
 
-                    <div className="w-px h-8 bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block" />
+                    <div className="hidden sm:block w-px h-8 bg-slate-200 dark:bg-slate-700 mx-1" />
 
                     <form onSubmit={handleSearch} className="flex gap-2">
-                        <div className="relative">
+                        <div className="relative flex-1 sm:flex-initial">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                             <Input
-                                placeholder="Analisar outro Epic..."
+                                placeholder="Analisar outro..."
                                 value={searchKey}
                                 onChange={e => setSearchKey(e.target.value)}
-                                className="pl-9 w-[220px] h-10 rounded-xl border-slate-200"
+                                className="pl-9 w-full sm:w-[160px] md:w-[220px] h-10 rounded-xl border-slate-200 text-xs font-bold"
                             />
                         </div>
-                        <Button type="submit" size="sm" className="bg-[#001540] hover:bg-[#001540]/90 text-white rounded-xl px-4 font-bold">TROCAR</Button>
+                        <Button type="submit" size="sm" className="bg-[#001540] hover:bg-[#001540]/90 text-white rounded-xl px-4 font-black uppercase text-[10px] tracking-widest">TROCAR</Button>
                     </form>
                 </div>
             </div>
@@ -1177,7 +1285,7 @@ export function EpicAnalysis() {
                         <TrendingUp size={16} className="text-white/40" />
                     </div>
                     <div className="relative z-10">
-                        <h2 className="text-5xl font-black leading-none">{percentComplete > 0 ? Math.min(100, Math.round(percentComplete * 1.1)) : 0}%</h2>
+                        <h2 className="text-5xl font-black leading-none">{percentComplete}%</h2>
                     </div>
                     <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">
                         {percentComplete >= 80 ? 'EXCELLENT' : percentComplete >= 50 ? 'ON-TRACK' : percentComplete > 0 ? 'AT RISK' : 'WAITING'}

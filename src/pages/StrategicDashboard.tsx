@@ -386,11 +386,11 @@ export function StrategicDashboard() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="text-3xl font-bold tracking-tight">Strategic Overview</h2>
-                <div className="flex items-center space-x-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-[#001540] dark:text-white uppercase">Strategic Overview</h1>
+                <div className="flex flex-wrap items-center gap-2">
                     <select
-                        className="p-1.5 border rounded bg-background text-sm font-medium"
+                        className="p-1.5 border rounded-lg bg-white dark:bg-slate-900 text-xs font-bold uppercase border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary/20"
                         value={selectedYear}
                         onChange={(e) => setSelectedYear(e.target.value)}
                     >
@@ -400,7 +400,7 @@ export function StrategicDashboard() {
                         <option value="2024">2024</option>
                     </select>
                     <select
-                        className="p-1.5 border rounded bg-background text-sm font-medium"
+                        className="p-1.5 border rounded-lg bg-white dark:bg-slate-900 text-xs font-bold uppercase border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-primary/20"
                         value={selectedVersion}
                         onChange={(e) => handleVersionChange(e.target.value)}
                     >
@@ -409,15 +409,17 @@ export function StrategicDashboard() {
                             <option key={v} value={v}>{v}</option>
                         ))}
                     </select>
-                    <Input
-                        placeholder="Project Key (e.g. DEVOPS)"
-                        value={projectKey}
-                        onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-                        className="w-[180px]"
-                    />
-                    <Button onClick={() => handleProjectChange(projectKey)} size="sm">
-                        <Search className="h-4 w-4 mr-2" /> Load
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Input
+                            placeholder="Project Key..."
+                            value={projectKey}
+                            onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
+                            className="w-[120px] md:w-[150px] h-9 text-xs font-bold rounded-lg"
+                        />
+                        <Button onClick={() => handleProjectChange(projectKey)} size="sm" className="h-9 px-4 font-black uppercase text-[10px] tracking-widest gap-2">
+                            <Search className="h-3 w-3" /> Load
+                        </Button>
+                    </div>
                 </div>
             </div>
 
