@@ -10,6 +10,8 @@ export interface UISettings {
     customLogoUrl?: string
     refreshInterval: number
     theme?: 'light' | 'dark' | 'system'
+    primaryColor?: string
+    secondaryColor?: string
 }
 
 export interface AISettings {

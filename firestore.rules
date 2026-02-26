@@ -59,6 +59,22 @@ service cloud.firestore {
     match /strategic_teams/{doc} {
       allow read, write: if request.auth != null;
     }
+
+    // Strategic Notes - All authenticated users
+    match /strategic_notes/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
+    // AI Insights - All authenticated users can read, Functions/Admin can write
+    match /ai_insights/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Strategic Notes - All authenticated users
+    match /strategic_notes/{doc} {
+      allow read, write: if request.auth != null;
+    }
     
     // System Logs - Authenticated users can write, Admin can read/write
     match /system_logs/{doc} {

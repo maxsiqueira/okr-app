@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react'
 import { UserSettings } from '@/types/settings'
 import { SettingsService } from '@/services/settings'
 import { useAuth } from './AuthContext'
@@ -122,6 +122,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
     }, [settings, loading])
 
+    // Dynamic Branding: Inject CSS Variables from Firestore Settings
+    useEffect(() => {
+        if (settings?.ui) {
+            const root = document.documentElement;
+            if (settings.ui.primaryColor) {
+                root.style.setProperty('--primary-color', settings.ui.primaryColor);
+            }
+            if (settings.ui.secondaryColor) {
+                root.style.setProperty('--secondary-color', settings.ui.secondaryColor);
+            }
+            console.log('[SettingsContext] Dynamic Branding applied from Firestore');
+        }
+    }, [settings?.ui])
+
     const updateSettings = async (updates: Partial<UserSettings>) => {
         try {
             await SettingsService.saveSettings(updates)
@@ -182,17 +196,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    const contextValue = useMemo(() => ({
+        settings,
+        loading,
+        updateSettings,
+        updateJiraSettings,
+        updateUISettings,
+        updateAISettings,
+        updateEpicAnalysisSettings,
+        updateDashboardSettings
+    }), [settings, loading])
+
     return (
-        <SettingsContext.Provider value={{
-            settings,
-            loading,
-            updateSettings,
-            updateJiraSettings,
-            updateUISettings,
-            updateAISettings,
-            updateEpicAnalysisSettings,
-            updateDashboardSettings
-        }}>
+        <SettingsContext.Provider value={contextValue}>
             {children}
         </SettingsContext.Provider>
     )

@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronRight, ExternalLink, Search, Clock, Sparkles, TrendingUp, Zap, Target, ListTodo, Settings } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useSettings } from "@/contexts/SettingsContext"
+import { Label } from "@/components/ui/label"
 
 
 const TubularBar = (props: any) => {
@@ -172,6 +173,12 @@ export function EpicAnalysis() {
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [extraEpicsData, setExtraEpicsData] = useState<any[]>([])
     const [missingCredentials, setMissingCredentials] = useState(false)
+    const [leaderNote, setLeaderNote] = useState("")
+    const [cLevelNote, setCLevelNote] = useState("")
+    const [isSavingNotes, setIsSavingNotes] = useState(false)
+    const [timeEntries, setTimeEntries] = useState<any[]>([])
+    const [isSavingEntry, setIsSavingEntry] = useState(false)
+    const [newEntry, setNewEntry] = useState({ hours: "", description: "" })
 
     // Check for missing Jira credentials on mount
     useEffect(() => {
@@ -186,6 +193,19 @@ export function EpicAnalysis() {
             setLoading(false)
         }
     }, [])
+
+    // Sync currentKey with settings if it changes (e.g., updated on another device)
+    useEffect(() => {
+        const savedKey = settings?.epicAnalysis?.defaultEpicKey
+        const urlKey = searchParams.get("key")
+
+        // Only override state if we don't have a URL param (URL has higher priority)
+        // and if the savedKey is actually different from current state
+        if (!urlKey && savedKey && savedKey.toUpperCase() !== currentKey) {
+            console.log(`[EpicAnalysis] Syncing key from settings: ${savedKey}`)
+            setCurrentKey(savedKey.toUpperCase())
+        }
+    }, [settings?.epicAnalysis?.defaultEpicKey, searchParams, currentKey])
 
     useEffect(() => {
         if (currentKey && currentKey.trim() !== "" && !missingCredentials) {
@@ -231,14 +251,152 @@ export function EpicAnalysis() {
                     // For now, let's clear it to show the dashboard, but maybe keep a small indicator.
                     setError(null)
                 } else {
-                    throw err // Re-throw original error if no cache
+                    // Enhanced check for 404
+                    if (err.message?.includes('404')) {
+                        setError(`Epic ${key} não encontrado ou sem permissão. Verifique o Key ou as credenciais nas Settings.`);
+                    } else {
+                        throw err // Re-throw original error if no cache and not a 404
+                    }
                 }
             } catch (persistErr) {
                 console.error("[EpicAnalysis] Final Error:", err)
                 // Use the Service error message directly to show Auth/Network/Not Found errors
                 const errorMessage = err?.message || "Failed to load epic details"
-                setError(errorMessage)
+                if (errorMessage.includes('404')) {
+                    setError(`[Jira Error 404] Epic ${key} não encontrado ou sem permissão de acesso. Verifique se o Key está correto e se você tem permissão no Jira.`);
+                } else {
+                    setError(errorMessage)
+                }
             }
+        }
+        setLoading(false)
+    }
+
+    // --- INITIALIZATION LOGIC (Multi-System) ---
+    useEffect(() => {
+        const initCollections = async () => {
+            if (auth.currentUser) {
+                try {
+                    const { getDocs, query, limit, collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+                    const rulesSnap = await getDocs(query(collection(db, 'calculation_rules'), limit(1)));
+                    if (rulesSnap.empty) {
+                        console.log('[Init] Seeding calculation_rules/jira_default...');
+                        await addDoc(collection(db, 'calculation_rules'), {
+                            platform: 'jira',
+                            name: 'Regras Padrão Jira',
+                            status_mapping: {
+                                'done': ['Done', 'Concluído', 'Finalizado', 'Closed'],
+                                'wip': ['In Progress', 'Em Andamento', 'Development', 'Review'],
+                                'todo': ['To Do', 'A Fazer', 'Backlog', 'Selected for Development']
+                            },
+                            weights: {
+                                'story': 1.0,
+                                'bug': 0.8,
+                                'task': 1.0,
+                                'sub-task': 0.5
+                            },
+                            timestamp: serverTimestamp()
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[Init] Silicon-valley mode: failed to seed collections (likely role)', e);
+                }
+            }
+        }
+        initCollections();
+    }, [auth.currentUser]);
+
+    // --- STRATEGIC NOTES LOGIC ---
+    useEffect(() => {
+        if (!currentKey) return
+        const loadNotes = async () => {
+            try {
+                const { getDoc, doc } = await import('firebase/firestore');
+                const noteSnap = await getDoc(doc(db, "strategic_notes", currentKey))
+                if (noteSnap.exists()) {
+                    setLeaderNote(noteSnap.data().leaderNote || "")
+                    setCLevelNote(noteSnap.data().cLevelNote || "")
+                } else {
+                    setLeaderNote("")
+                    setCLevelNote("")
+                }
+            } catch (e) {
+                console.error("[EpicAnalysis] Error loading notes:", e)
+            }
+        }
+        loadNotes()
+    }, [currentKey])
+
+    const saveNotes = async () => {
+        if (!currentKey) return
+        setIsSavingNotes(true)
+        try {
+            const { setDoc, doc, serverTimestamp } = await import('firebase/firestore');
+            await setDoc(doc(db, "strategic_notes", currentKey), {
+                leaderNote,
+                cLevelNote,
+                updatedAt: serverTimestamp(),
+                updatedBy: auth.currentUser?.email || 'anonymous'
+            }, { merge: true })
+            console.log("[EpicAnalysis] Notes saved successfully")
+        } catch (e) {
+            console.error("[EpicAnalysis] Error saving notes:", e)
+            logToFirestore("error", "EpicAnalysis.saveNotes", (e as Error).message, { epicKey: currentKey })
+        } finally {
+            setIsSavingNotes(false)
+        }
+    }
+
+    // --- TIME ENTRIES (APONTAMENTOS) LOGIC ---
+    useEffect(() => {
+        if (!currentKey) return
+        let unsubscribe: () => void = () => { }
+
+        const initListener = async () => {
+            try {
+                const { query, collection, where, onSnapshot, orderBy, limit } = await import('firebase/firestore');
+                const q = query(
+                    collection(db, "time_entries"),
+                    where("external_key", "==", currentKey),
+                    orderBy("timestamp", "desc"),
+                    limit(50) // PAGINATION: Prevent expensive reads on large epics
+                )
+
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    setTimeEntries(entries)
+                }, (err) => {
+                    console.error("[EpicAnalysis] Error loading time entries:", err)
+                })
+            } catch (e) {
+                console.error("[EpicAnalysis] Listener setup failed:", e)
+            }
+        }
+
+        initListener()
+        return () => unsubscribe()
+    }, [currentKey])
+
+    const handleAddEntry = async () => {
+        if (!currentKey || !newEntry.hours) return
+        setIsSavingEntry(true)
+        try {
+            const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
+            await addDoc(collection(db, "time_entries"), {
+                external_key: currentKey,
+                system_source: 'manual',
+                hours: parseFloat(newEntry.hours),
+                description: newEntry.description,
+                user_id: auth.currentUser?.uid || 'anonymous',
+                user_email: auth.currentUser?.email || 'anonymous',
+                timestamp: serverTimestamp()
+            })
+            setNewEntry({ hours: "", description: "" })
+        } catch (e) {
+            console.error("[EpicAnalysis] Error adding entry:", e)
+            logToFirestore("error", "EpicAnalysis.addEntry", (e as Error).message, { epicKey: currentKey })
+        } finally {
+            setIsSavingEntry(false)
         }
     }
 
@@ -636,8 +794,17 @@ export function EpicAnalysis() {
         }
     })
 
-    const totalSpentHours = Math.round(totalSpentSeconds / 3600)
+    // --- Unified Effort Aggregation ---
+    const totalManualHours = timeEntries.reduce((acc, entry) => acc + (entry.hours || 0), 0)
+    const totalSpentHours = Math.round((totalSpentSeconds / 3600) + totalManualHours)
     const totalEstimateHours = Math.round(totalEstimateSeconds / 3600)
+
+    // Add manual entries to workload if relevant, or separate "Manual Effort" category
+    if (totalManualHours > 0) {
+        const current = workloadMap.get("Apontamentos Manuais") || 0
+        workloadMap.set("Apontamentos Manuais", current + totalManualHours)
+    }
+
     const timeProgress = totalEstimateHours > 0 ? Math.min(100, Math.round((totalSpentHours / totalEstimateHours) * 100)) : 0
 
     const realWorkloadData = Array.from(workloadMap.entries()).map(([name, hours]) => ({
@@ -704,14 +871,6 @@ export function EpicAnalysis() {
             // toast.error("Erro ao salvar snapshot")
         }
     }
-    */
-
-    // Auto-save effect (optional/commented out for now)
-    /*
-    useEffect(() => {
-        if (!epic || loading || !allActiveChildren.length) return
-        // saveSnapshot() logic here if we want auto-save
-    }, [epic, allActiveChildren.length, totalSpentSeconds])
     */
 
     return (
@@ -1070,6 +1229,121 @@ export function EpicAnalysis() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* STRATEGIC NOTES SECTION */}
+            <div className="grid gap-6 md:grid-cols-2 mt-6 mb-6">
+                <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+                    <CardHeader className="pb-3 border-b border-slate-50 dark:border-slate-800">
+                        <CardTitle className="text-sm font-black flex items-center gap-2 text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                            <Zap className="w-4 h-4 text-amber-500" /> Nota do Líder
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                        <textarea
+                            className="w-full h-32 p-3 text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-[#FF4200]/20 outline-none transition-all resize-none italic"
+                            placeholder="Adicione observações estratégicas do líder da iniciativa..."
+                            value={leaderNote}
+                            onChange={(e) => setLeaderNote(e.target.value)}
+                            onBlur={saveNotes}
+                        />
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+                    <CardHeader className="pb-3 border-b border-slate-50 dark:border-slate-800">
+                        <CardTitle className="text-sm font-black flex items-center gap-2 text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                            <Target className="w-4 h-4 text-blue-500" /> Nota C-Level (Diretoria)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                        <textarea
+                            className="w-full h-32 p-3 text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-[#FF4200]/20 outline-none transition-all resize-none font-bold"
+                            placeholder="Diretrizes e comentários da diretoria..."
+                            value={cLevelNote}
+                            onChange={(e) => setCLevelNote(e.target.value)}
+                            onBlur={saveNotes}
+                        />
+                    </CardContent>
+                </Card>
+                {isSavingNotes && (
+                    <div className="col-span-full flex justify-end">
+                        <span className="text-[10px] font-bold text-slate-400 animate-pulse">SALVANDO ALTERAÇÕES...</span>
+                    </div>
+                )}
+            </div>
+
+            {/* APONTAMENTOS (TIME ENTRIES) SECTION */}
+            <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden mt-6 mb-6">
+                <CardHeader className="border-b border-slate-50 dark:border-slate-800 flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle className="text-lg font-black flex items-center gap-2 text-slate-700 dark:text-slate-200 uppercase tracking-tight">
+                            <Clock className="w-5 h-5 text-[#FF4200]" /> Apontamentos Adicionais
+                        </CardTitle>
+                        <CardDescription className="text-slate-400 font-medium text-xs">Registro manual de esforço (Útil para outros sistemas ou esforço extra)</CardDescription>
+                    </div>
+                </CardHeader>
+                <CardContent className="pt-6">
+                    <div className="grid gap-6 md:grid-cols-3">
+                        {/* FORM */}
+                        <div className="md:col-span-1 space-y-4 border-r border-slate-50 dark:border-slate-800 pr-6">
+                            <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase text-slate-500">Horas</Label>
+                                <input
+                                    type="number"
+                                    className="w-full p-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-[#FF4200]/20"
+                                    placeholder="Ex: 2.5"
+                                    value={newEntry.hours}
+                                    onChange={(e) => setNewEntry({ ...newEntry, hours: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase text-slate-500">Descrição</Label>
+                                <textarea
+                                    className="w-full h-24 p-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-[#FF4200]/20 resize-none"
+                                    placeholder="O que foi feito?"
+                                    value={newEntry.description}
+                                    onChange={(e) => setNewEntry({ ...newEntry, description: e.target.value })}
+                                />
+                            </div>
+                            <Button
+                                onClick={handleAddEntry}
+                                disabled={isSavingEntry || !newEntry.hours}
+                                className="w-full bg-[#FF4200] hover:bg-[#E63B00] text-white font-black uppercase tracking-widest text-[10px] h-10 shadow-lg shadow-orange-500/20"
+                            >
+                                {isSavingEntry ? "Salvando..." : "Registrar Esforço"}
+                            </Button>
+                        </div>
+
+                        {/* LIST */}
+                        <div className="md:col-span-2 space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-slate-500">Histórico de Apontamentos</Label>
+                            {timeEntries.length > 0 ? (
+                                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2">
+                                    {timeEntries.map((entry) => (
+                                        <div key={entry.id} className="flex items-start justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 group">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{entry.hours}h</span>
+                                                    <span className="text-[10px] text-slate-400 font-medium">• {entry.user_email}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{entry.description || "Sem descrição"}</p>
+                                            </div>
+                                            <span className="text-[9px] text-slate-300 font-bold uppercase whitespace-nowrap">
+                                                {entry.timestamp?.toDate?.() ? entry.timestamp.toDate().toLocaleDateString('pt-BR') : 'Recent'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="h-32 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-800/20 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                                    <Clock className="w-8 h-8 opacity-20 mb-2" />
+                                    <span className="text-xs font-medium">Nenhum esforço manual registrado.</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
 
             <Card className="shadow-none border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
                 <CardHeader className="border-b border-slate-50 dark:border-slate-800">

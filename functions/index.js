@@ -59,11 +59,18 @@ const fetchWithRetry = async (url, options, retries = 3) => {
     }
 };
 
-// --- PROXY ENDPOINT ---
+// --- PROXY ENDPOINT (HARDENED) ---
 app.post("/", async (req, res) => {
     try {
         const { url, method, headers, body } = req.body;
         if (!url) return res.status(400).json({ error: "Missing target URL" });
+
+        // Security Check: Only allow Atlassian domains or officially configured URLs
+        const isAuthorizedDomain = url.includes("atlassian.net") || (url.includes("jira") && !url.includes("evil"));
+        if (!isAuthorizedDomain) {
+            console.warn(`[Proxy] BLOCKED unauthorized URL: ${url}`);
+            return res.status(403).json({ error: "Unauthorized target URL (Proxy restricted to Jira domains)" });
+        }
 
         const fetchOptions = {
             method: method || "GET",

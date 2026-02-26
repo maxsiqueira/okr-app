@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home, FileBarChart } from "lucide-react"
+import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home, FileBarChart, Activity } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
@@ -201,6 +201,10 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                                 <span>{t('sidebar.reports', 'Reports')}</span>
                             </NavLink>
                         )}
+                        <NavLink to="/status" active={pathname === "/status"}>
+                            <Activity className="h-4 w-4" />
+                            <span>Status</span>
+                        </NavLink>
                         {canAccess('settings') && (
                             <NavLink to="/settings" active={pathname === "/settings"}>
                                 <Settings className="h-4 w-4" />

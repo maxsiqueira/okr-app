@@ -19,6 +19,7 @@ const ExtraEpicAnalysis = lazy(() => import("@/pages/ExtraEpicAnalysis").then(m 
 const Reports = lazy(() => import("@/pages/Reports"))
 const Login = lazy(() => import("@/pages/Login"))
 const Unauthorized = lazy(() => import("@/pages/Unauthorized"))
+const StatusPage = lazy(() => import("@/pages/StatusPage").then(m => ({ default: m.StatusPage })))
 
 // Loading fallback component
 const PageLoader = () => (
@@ -53,6 +54,7 @@ const LandingRedirect = () => {
     'assessment': '/assessment',
     'manual-okrs': '/manual-okrs',
     'reports': '/reports',
+    'status': '/status',
     'settings': '/settings'
   };
 
@@ -136,6 +138,12 @@ function App() {
                   <Route path="/reports" element={
                     <ProtectedRoute requiredPanel="reports">
                       <Reports />
+                    </ProtectedRoute>
+                  } />
+
+                  <Route path="/status" element={
+                    <ProtectedRoute>
+                      <StatusPage />
                     </ProtectedRoute>
                   } />
                 </Route>

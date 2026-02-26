@@ -180,8 +180,14 @@ export function StrategicObjectives() {
             console.log("[Epic Progress] Fetched from Jira and cached");
 
             setEpicData(progressMap)
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to fetch epic progress", error)
+            const msg = error.message || "Erro desconhecido ao carregar progresso"
+            if (msg.includes('404')) {
+                setErrorMsg("Um ou mais Epics não foram encontrados no Jira ou as permissões são insuficientes. Verifique os Keys nas Objectives.")
+            } else {
+                setErrorMsg(`Erro na sincronização Jira: ${msg}`)
+            }
         }
         setLoading(false)
     }

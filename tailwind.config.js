@@ -14,11 +14,11 @@ export default {
                 background: "hsl(var(--background))",
                 foreground: "hsl(var(--foreground))",
                 primary: {
-                    DEFAULT: "#FF4200", // ION Orange
+                    DEFAULT: "var(--primary-color, #FF4200)", // ION Orange (Dynamic)
                     foreground: "#FFFFFF",
                 },
                 secondary: {
-                    DEFAULT: "#333333", // ION Dark Gray
+                    DEFAULT: "var(--secondary-color, #333333)", // ION Dark Gray (Dynamic)
                     foreground: "#FFFFFF",
                 },
                 destructive: {
@@ -43,8 +43,8 @@ export default {
                 },
                 // ION Brand Specific
                 ion: {
-                    orange: "#FF4200",
-                    dark: "#333333",
+                    orange: "var(--primary-color, #FF4200)",
+                    dark: "var(--secondary-color, #333333)",
                     light: "#F7F7F7",
                 },
                 // Template compatibility
@@ -55,7 +55,7 @@ export default {
                         200: '#fed7aa',
                         300: '#fdba74',
                         400: '#fb923c',
-                        500: '#FF4200',
+                        500: 'var(--primary-color, #FF4200)',
                         600: '#ea580c',
                         700: '#c2410c',
                         800: '#9a3412',

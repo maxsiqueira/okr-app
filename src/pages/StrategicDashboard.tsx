@@ -76,6 +76,7 @@ export function StrategicDashboard() {
     const [allEpics, setAllEpics] = useState<JiraIssue[]>([]) // Fallback or Combined
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [warning, setWarning] = useState<string | null>(null)
     const [projectKey, setProjectKey] = useState("")
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [allVersions, setAllVersions] = useState<string[]>([])
@@ -93,8 +94,8 @@ export function StrategicDashboard() {
         const savedProjectKey = settings?.dashboard?.projectKey || localStorage.getItem("jira_project_key") || "ION"
         const savedVersion = settings?.dashboard?.selectedVersion || "ALL"
 
-        setProjectKey(savedProjectKey)
-        setSelectedVersion(savedVersion)
+        if (savedProjectKey !== projectKey) setProjectKey(savedProjectKey)
+        if (savedVersion !== selectedVersion) setSelectedVersion(savedVersion)
 
         // Listen to system config changes
         const unsubscribeConfig = onSnapshot(doc(db, "system_config", "jira"), (snapshot) => {
@@ -108,7 +109,7 @@ export function StrategicDashboard() {
             if (typeof unsubscribeObjectives === 'function') unsubscribeObjectives()
             unsubscribeConfig()
         }
-    }, [])
+    }, [settings, user]) // Reactive to settings and user login
 
     // Reload data when systemConfig or selectedVersion changes
     useEffect(() => {
@@ -159,10 +160,21 @@ export function StrategicDashboard() {
 
             if (userOkrIds.length > 0 || userExtraIds.length > 0) {
                 console.log(`[Dashboard] Trying User Config:`, { okr: userOkrIds, extra: userExtraIds })
+
+                // Wrap in try-catch to satisfy Promise.all even if one fails
                 const [okrData, extraData] = await Promise.all([
-                    JiraService.getEpicsByKeys(userOkrIds, version),
-                    JiraService.getEpicsByKeys(userExtraIds, version)
+                    JiraService.getEpicsByKeys(userOkrIds, version).catch(err => {
+                        console.error("[Dashboard] OKR Epics load error:", err);
+                        if (err.message.includes('404')) setWarning("Algumas Iniciativas OKR não foram encontradas.")
+                        return [];
+                    }),
+                    JiraService.getEpicsByKeys(userExtraIds, version).catch(err => {
+                        console.error("[Dashboard] Extra Epics load error:", err);
+                        if (err.message.includes('404')) setWarning("Algumas Iniciativas Extras não foram encontradas.")
+                        return [];
+                    })
                 ])
+
                 if (okrData.length > 0 || extraData.length > 0) {
                     fetchedOkr = okrData
                     fetchedExtra = extraData
@@ -180,8 +192,14 @@ export function StrategicDashboard() {
                 if (sysOkrIds.length > 0 || sysExtraIds.length > 0) {
                     console.log(`[Dashboard] Trying System/Local Config:`, { okr: sysOkrIds, extra: sysExtraIds })
                     const [okrData, extraData] = await Promise.all([
-                        JiraService.getEpicsByKeys(sysOkrIds, version),
-                        JiraService.getEpicsByKeys(sysExtraIds, version)
+                        JiraService.getEpicsByKeys(sysOkrIds, version).catch(e => {
+                            console.error("[Dashboard] System OKR load error:", e);
+                            return [];
+                        }),
+                        JiraService.getEpicsByKeys(sysExtraIds, version).catch(e => {
+                            console.error("[Dashboard] System Extra load error:", e);
+                            return [];
+                        })
                     ])
                     if (okrData.length > 0 || extraData.length > 0) {
                         fetchedOkr = okrData
@@ -195,9 +213,19 @@ export function StrategicDashboard() {
             if (fetchedAll.length === 0) {
                 // Default Mode (Project Scan)
                 console.log(`[Dashboard] No specific epics found (or not configured). Scanning project ${project}...`)
-                fetchedAll = await JiraService.getEpics(project, version)
-                fetchedOkr = fetchedAll
-                fetchedExtra = []
+                try {
+                    fetchedAll = await JiraService.getEpics(project, version)
+                    fetchedOkr = fetchedAll
+                    fetchedExtra = []
+                } catch (scanErr: any) {
+                    console.error("[Dashboard] Project scan failed:", scanErr);
+                    if (scanErr.message?.includes('404')) {
+                        setWarning(`O Projeto "${project}" não foi encontrado ou você não tem permissão. Verifique o Key nas Configurações.`);
+                    } else {
+                        // For other errors in scan, we still want to show the error state if it's the only way to load data
+                        throw scanErr;
+                    }
+                }
             }
 
             setOkrEpics(fetchedOkr)
@@ -209,12 +237,14 @@ export function StrategicDashboard() {
                 const userConfigured = userOkrIds.length > 0 || userExtraIds.length > 0
                 const sysConfigured = (systemConfig?.okr_epic_keys || []).length > 0 || (systemConfig?.extra_epic_keys || []).length > 0
 
-                if (userConfigured || sysConfigured) {
-                    setError(`Não foi possível carregar os Epics configurados (${userConfigured ? 'Perfil Usuário' : 'Sistema'}). Verifique as permissões no Jira ou as chaves configuradas.`)
-                } else if (!project) {
-                    setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
-                } else {
-                    setError(`Nenhum Epic encontrado no projeto "${project}". Tente outra chave ou configure Epics específicos.`)
+                if (!warning) {
+                    if (userConfigured || sysConfigured) {
+                        setError(`Não foi possível carregar os Epics configurados (${userConfigured ? 'Perfil Usuário' : 'Sistema'}). Verifique as permissões no Jira ou as chaves configuradas.`)
+                    } else if (!project) {
+                        setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
+                    } else {
+                        setError(`Nenhum Epic encontrado no projeto "${project}". Tente outra chave ou configure Epics específicos.`)
+                    }
                 }
             }
 
@@ -492,6 +522,12 @@ export function StrategicDashboard() {
             )}
 
             <div className="grid gap-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 items-start">
+                {warning && (
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" /> {warning}
+                    </div>
+                )}
+
                 {loading ? (
                     <div className="col-span-2 text-center p-10 text-muted-foreground">Loading Initiatives...</div>
                 ) : (
