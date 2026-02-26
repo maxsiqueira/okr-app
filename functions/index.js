@@ -15,9 +15,30 @@ const { logger } = require("firebase-functions");
 
 admin.initializeApp();
 
+const VERSION = "1.1.0";
+const CURRENT_PATCH = "P1-JIRA-410-LOGGING";
+
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
+
+// --- FIRESTORE LOGGING HELPER ---
+const logToFirestore = async (level, context, message, details = {}) => {
+    try {
+        await admin.firestore().collection('system_logs').add({
+            level, // 'error', 'warning', 'info'
+            source: 'backend',
+            context,
+            message,
+            details,
+            version: VERSION,
+            patch: CURRENT_PATCH,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+        console.error(`[CRITICAL] Failed to log to Firestore: ${err.message}`);
+    }
+};
 
 // --- ROBUST FETCH WITH RETRY HELPER ---
 const fetchWithRetry = async (url, options, retries = 3) => {
@@ -137,6 +158,7 @@ exports.sendEmail = onCall({ timeoutSeconds: 60, memory: '256MiB', cors: true },
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('[Email] Failed:', error);
+        await logToFirestore('error', 'sendEmail', error.message, { to, subject });
         throw new HttpsError('internal', error.message);
     }
 });
@@ -203,21 +225,28 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
         // Fetch Epic
         const fields = "summary,status,issuetype,assignee,created,updated,timespent,timeoriginalestimate,aggregatetimespent,aggregatetimeoriginalestimate,aggregatetimeestimate";
         const epicUrl = `${jiraUrl}/rest/api/3/issue/${epicKey}?fields=${fields}`;
+        console.log(`[fetchEpicData] Fetching epic: ${epicUrl}`);
         let epicRes = await fetchWithRetry(epicUrl, { headers });
 
         if (epicRes.status === 401) {
+            console.log(`[fetchEpicData] 401 on v3, trying Bearer...`);
             epicRes = await fetchWithRetry(epicUrl, { headers: headersBearer });
             if (epicRes.ok) { headers = headersBearer; useBearer = true; }
         }
 
-        if (!epicRes.ok) throw new HttpsError('internal', `Jira Error ${epicRes.status}`);
+        if (!epicRes.ok) {
+            const errBody = await epicRes.text();
+            console.error(`[fetchEpicData] Epic Fetch Failed: ${epicRes.status} - ${errBody}`);
+            await logToFirestore('error', 'fetchEpicData', `Jira Error ${epicRes.status}`, { epicKey, error: errBody.substring(0, 500) });
+            throw new HttpsError('internal', `Jira Error ${epicRes.status}: ${errBody.substring(0, 100)}`);
+        }
         const epicData = await epicRes.json();
 
         // Fetch Children
         const jql = `(parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND issuetype not in (Sub-task, Subtask, Subtarefa, "Sub-tarefa")`;
         let children = [];
         let startAt = 0;
-        let finalSearchUrl = `${jiraUrl}/rest/api/3/search`;
+        let finalSearchUrl = `${jiraUrl}/rest/api/3/search/jql`;
 
         while (true) {
             const body = {
@@ -329,13 +358,33 @@ exports.fetchStrategicObjectives = onCall({ timeoutSeconds: 300, memory: '512MiB
         const headers = { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json', 'Content-Type': 'application/json' };
 
         const jql = `project = ${projectKey.replace(/[^a-zA-Z0-9-_]/g, '')} AND issuetype = Epic AND status != Done ORDER BY created DESC`;
-        const searchUrl = `${jiraUrl}/rest/api/3/search`;
+        const searchUrl = `${jiraUrl}/rest/api/3/search/jql`;
+        console.log(`[fetchStrategicObjectives] Fetching: ${searchUrl} with JQL: ${jql}`);
+
         const res = await fetchWithRetry(searchUrl, {
             method: 'POST', headers,
             body: JSON.stringify({ jql, fields: ["summary", "status", "description", "created", "updated", "fixVersions"], maxResults: 100 })
         });
 
-        if (!res.ok) throw new HttpsError('internal', `Jira Error ${res.status}`);
+        if (res.status === 404 || res.status === 410) {
+            console.log(`[fetchStrategicObjectives] v3 Search ${res.status}, trying legacy v2 /search...`);
+            const legacyUrl = `${jiraUrl}/rest/api/2/search`;
+            const legacyRes = await fetchWithRetry(legacyUrl, {
+                method: 'POST', headers,
+                body: JSON.stringify({ jql, fields: ["summary", "status", "description", "created", "updated", "fixVersions"], maxResults: 100 })
+            });
+            if (legacyRes.ok) {
+                const data = await legacyRes.json();
+                return { objectives: data.issues || [] };
+            }
+        }
+
+        if (!res.ok) {
+            const errBody = await res.text();
+            console.error(`[fetchStrategicObjectives] Search Failed: ${res.status} - ${errBody}`);
+            await logToFirestore('error', 'fetchStrategicObjectives', `Jira Error ${res.status}`, { projectKey, error: errBody.substring(0, 500) });
+            throw new HttpsError('internal', `Jira Error ${res.status}: ${errBody.substring(0, 100)}`);
+        }
         const data = await res.json();
         const result = { objectives: data.issues || [] };
 

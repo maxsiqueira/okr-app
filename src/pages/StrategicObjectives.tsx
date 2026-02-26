@@ -12,8 +12,27 @@ import { useTranslation } from "react-i18next"
 import { StrategicReport } from "@/components/objectives/StrategicReport"
 import { JiraService } from "@/services/jira-client"
 import { db, auth } from "@/lib/firebase"
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore"
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc, addDoc, serverTimestamp } from "firebase/firestore"
+import { APP_VERSION, CURRENT_PATCH } from "@/constants/version";
 import { AiInsightsSection } from "@/components/analytics/AiInsightsSection"
+
+const logToFirestore = async (level: string, context: string, message: string, details: any = {}) => {
+    try {
+        await addDoc(collection(db, "system_logs"), {
+            level, // 'error', 'warning', 'info'
+            source: 'frontend',
+            context,
+            message,
+            details,
+            user: auth.currentUser?.email || 'anonymous',
+            version: APP_VERSION,
+            patch: CURRENT_PATCH,
+            timestamp: serverTimestamp(),
+        });
+    } catch (err) {
+        console.error("Failed to log to Firestore:", err);
+    }
+};
 
 export interface StrategicObjective {
     id: string
@@ -67,15 +86,22 @@ export function StrategicObjectives() {
         // Firestore Real-time sync for Objectives
         const q = query(collection(db, "strategic_objectives"));
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const items: StrategicObjective[] = [];
-            querySnapshot.forEach((doc) => {
-                items.push({ ...doc.data() as StrategicObjective, id: doc.id });
-            });
-            setObjectives(items);
-            fetchEpicProgress(items);
+            try {
+                const items: StrategicObjective[] = [];
+                querySnapshot.forEach((doc) => {
+                    items.push({ ...doc.data() as StrategicObjective, id: doc.id });
+                });
+                setObjectives(items);
+                fetchEpicProgress(items);
+            } catch (err: any) {
+                console.error("Error processing strategic_objectives snapshot:", err);
+                setErrorMsg(`Erro ao processar Objetivos: ${err.message}`);
+                logToFirestore("error", "StrategicObjectives.onSnapshot", err.message || "Unknown error processing snapshot", { error: err.toString() });
+            }
         }, (error) => {
             console.error("Error fetching strategic_objectives:", error);
             setErrorMsg(`Erro ao carregar Objetivos: ${error.message} (Code: ${error.code})`)
+            logToFirestore("error", "StrategicObjectives.onSnapshotListener", error.message || "Unknown error fetching objectives", { code: error.code, error: error.toString() });
         });
 
         // Firestore Real-time sync for Teams

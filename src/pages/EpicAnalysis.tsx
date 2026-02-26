@@ -3,8 +3,27 @@ import { useSearchParams, useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
-// import { collection, addDoc, serverTimestamp } from "firebase/firestore"
-// import { db } from "@/lib/firebase" // Ensure db is exported from your firebase config
+import { db, auth } from "../lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { APP_VERSION, CURRENT_PATCH } from "@/constants/version";
+
+const logToFirestore = async (level: string, context: string, message: string, details: any = {}) => {
+    try {
+        await addDoc(collection(db, "system_logs"), {
+            level, // 'error', 'warning', 'info'
+            source: 'frontend',
+            context,
+            message,
+            details,
+            user: auth.currentUser?.email || 'anonymous',
+            version: APP_VERSION,
+            patch: CURRENT_PATCH,
+            timestamp: serverTimestamp(),
+        });
+    } catch (err) {
+        console.error("Failed to log to Firestore:", err);
+    }
+};
 // import { toast } from "sonner" // Sonner not installed
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { Input } from "@/components/ui/input"
@@ -198,7 +217,9 @@ export function EpicAnalysis() {
                 throw new Error("Epic not found in live search")
             }
         } catch (err: any) {
-            console.warn("[EpicAnalysis] Live fetch failed, attempting persistence load...", err)
+            console.error("Critical error in Epic Analysis:", err);
+            setError(err.message || "Erro desconhecido ao carregar dados do épico");
+            logToFirestore("error", "EpicAnalysis", err.message || "Unknown error", { epicKey: key });
 
             try {
                 const { JiraPersistenceService } = await import('@/services/jira-persistence')
@@ -219,8 +240,34 @@ export function EpicAnalysis() {
                 setError(errorMessage)
             }
         }
-        setLoading(false)
     }
+
+    // 1. Overall Epic Progress (Weighted Average by Story Points)
+    // "Total Major" includes ALL statuses except Cancelled
+    const allMajorIssues = useMemo(() => {
+        if (!data || !data.children) return [];
+        return data.children.filter(c => !c.fields?.issuetype?.subtask && !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
+    }, [data]);
+
+    const percentComplete = useMemo(() => {
+        if (!allMajorIssues || allMajorIssues.length === 0) return 0;
+
+        let totalPoints = 0;
+        let weightedProgress = 0;
+
+        allMajorIssues.forEach(issue => {
+            // Use Story Points (customfield_10016), default to weight 1 if missing
+            const points = issue.fields?.customfield_10016 || 1;
+
+            // Progress field is calculated by the backend (includes 100% for Done items)
+            const progress = issue.fields?.progress || 0;
+
+            totalPoints += points;
+            weightedProgress += (progress * points);
+        });
+
+        return totalPoints > 0 ? Math.round(weightedProgress / totalPoints) : 0;
+    }, [allMajorIssues]);
 
     useEffect(() => {
         const extraKeysStr = localStorage.getItem("extra_epics") || ""
@@ -468,40 +515,16 @@ export function EpicAnalysis() {
     // UPDATE METRICS TO USE FILTERED LIST (Children + Subtasks)
     const allFilteredIssues = filteredChildren.flatMap(c => [c, ...(c.subtasks || [])])
 
-    const activeIssuesFiltered = allFilteredIssues.filter(c => !c.fields.status.name.toLowerCase().includes("cancel"))
+    const activeIssuesFiltered = allFilteredIssues.filter(c => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
 
     // Correct categorization using subtask field
     const majorIssuesFiltered = activeIssuesFiltered.filter(i => !i.fields.issuetype.subtask)
-
-    // 1. Overall Epic Progress (Weighted Average by Story Points)
-    // "Total Major" includes ALL statuses except Cancelled
-    const allMajorIssues = children.filter(c => !c.fields.issuetype.subtask && !c.fields.status.name.toLowerCase().includes("cancel"))
-
-    const percentComplete = useMemo(() => {
-        if (allMajorIssues.length === 0) return 0;
-
-        let totalPoints = 0;
-        let weightedProgress = 0;
-
-        allMajorIssues.forEach(issue => {
-            // Use Story Points (customfield_10016), default to weight 1 if missing
-            const points = issue.fields.customfield_10016 || 1;
-
-            // Progress field is calculated by the backend (includes 100% for Done items)
-            const progress = issue.fields.progress || 0;
-
-            totalPoints += points;
-            weightedProgress += (progress * points);
-        });
-
-        return totalPoints > 0 ? Math.round(weightedProgress / totalPoints) : 0;
-    }, [allMajorIssues]);
 
     // MAJOR METRICS (Lead for KPIs and Charts - Reacts to filters)
     const majorDone = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "done").length
     const majorInProgress = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "indeterminate").length
     const majorToDo = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "new").length
-    const majorCancelled = allFilteredIssues.filter(i => i.fields.status.name.toLowerCase().includes("cancel") && !i.fields.issuetype.subtask).length
+    const majorCancelled = allFilteredIssues.filter(i => (i.fields?.status?.name || "").toLowerCase().includes("cancel") && !i.fields?.issuetype?.subtask).length
 
     // SUBTASK METRICS (Secondary details)
     // subDone, subInProgress, subToDo removed as they were not used in UI
@@ -512,10 +535,10 @@ export function EpicAnalysis() {
 
     // COUNTER METRICS - Use RAW children data (not filtered by version/quarter)
     // This ensures counters show the TOTAL count across the entire Epic
-    const allActiveChildren = children.filter(c => !c.fields.status.name.toLowerCase().includes("cancel"))
+    const allActiveChildren = children.filter(c => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
 
     // Helper functions for classification
-    const normalizeType = (c: JiraIssue) => (c.fields.issuetype.name || "").trim().toLowerCase()
+    const normalizeType = (c: JiraIssue) => (c.fields?.issuetype?.name || "").trim().toLowerCase()
 
     const isStory = (c: JiraIssue) => {
         const t = normalizeType(c)
@@ -636,7 +659,7 @@ export function EpicAnalysis() {
             if (cat === 'done') cStats.done++
             else if (cat === 'indeterminate') cStats.wip++
             else if (cat === 'new') cStats.todo++
-            if (issue.fields.status.name.toLowerCase().includes('cancel')) cStats.cancelled++
+            if ((issue.fields?.status?.name || "").toLowerCase().includes('cancel')) cStats.cancelled++
             componentStats.set(comp, cStats)
         })
     })
@@ -1068,8 +1091,8 @@ export function EpicAnalysis() {
 function TaskRow({ task }: { task: JiraIssue }) {
     const [expanded, setExpanded] = useState(false)
     const hasSubtasks = task.subtasks && task.subtasks.length > 0
-    const selfSpent = (task.fields.timespent || 0) / 3600
-    const selfEst = (task.fields.timeoriginalestimate || 0) / 3600
+    const selfSpent = (task.fields?.timespent || 0) / 3600
+    const selfEst = (task.fields?.timeoriginalestimate || 0) / 3600
 
     return (
         <div className="border-none rounded-xl bg-slate-50/50 dark:bg-white/5 overflow-hidden mb-3 last:mb-0 transition-all duration-200">
@@ -1084,7 +1107,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                     <div className="space-y-1 flex-grow">
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded uppercase tracking-wider">{task.key}</span>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-realestate-primary-600 transition-colors">{task.fields.summary}</p>
+                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-realestate-primary-600 transition-colors">{task.fields?.summary}</p>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -1100,7 +1123,7 @@ function TaskRow({ task }: { task: JiraIssue }) {
                             </button>
                         </div>
                         <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
-                            <span className="flex items-center gap-1"><Badge variant="outline" className="text-[9px] font-black h-4 px-1 border-slate-200">{task.fields.issuetype.name}</Badge></span>
+                            <span className="flex items-center gap-1"><Badge variant="outline" className="text-[9px] font-black h-4 px-1 border-slate-200">{task.fields?.issuetype?.name || 'Issue'}</Badge></span>
                             {(selfSpent > 0 || selfEst > 0) && (
                                 <span className={`flex items-center gap-1.5 ${selfSpent > selfEst && selfEst > 0 ? "text-rose-500 font-black" : "text-emerald-500 font-bold"}`}>
                                     <Clock size={12} />
@@ -1112,10 +1135,10 @@ function TaskRow({ task }: { task: JiraIssue }) {
                 </div>
                 <div className="flex items-center gap-2">
                     <Badge className={`text-[9px] font-black uppercase tracking-wider border-none px-2 py-1
-                        ${task.fields.status.statusCategory.key === 'done' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                            task.fields.status.statusCategory.key === 'indeterminate' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' :
+                        ${task.fields?.status?.statusCategory?.key === 'done' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                            task.fields?.status?.statusCategory?.key === 'indeterminate' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' :
                                 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
-                        {task.fields.status.name}
+                        {task.fields?.status?.name || 'Status'}
                     </Badge>
                 </div>
             </div>
@@ -1123,13 +1146,13 @@ function TaskRow({ task }: { task: JiraIssue }) {
                 <div className="px-4 pb-4 animate-slide-down">
                     <div className="ml-4 pl-4 border-l-2 border-slate-100 dark:border-slate-800 space-y-3 mt-2">
                         {task.subtasks!.map(sub => {
-                            const subSpent = (sub.fields.timespent || 0) / 3600;
-                            const subEst = (sub.fields.timeoriginalestimate || 0) / 3600
+                            const subSpent = (sub.fields?.timespent || 0) / 3600;
+                            const subEst = (sub.fields?.timeoriginalestimate || 0) / 3600
                             return (
                                 <div key={sub.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800/50 transition-colors group/sub">
                                     <div className="flex items-center gap-3 flex-grow text-xs">
                                         <span className="text-[10px] font-black text-slate-300 group-hover/sub:text-orange-400">{sub.key}</span>
-                                        <span className="text-slate-600 dark:text-slate-400 font-medium">{sub.fields.summary}</span>
+                                        <span className="text-slate-600 dark:text-slate-400 font-medium">{sub.fields?.summary}</span>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1151,8 +1174,8 @@ function TaskRow({ task }: { task: JiraIssue }) {
                                         )}
                                     </div>
                                     <Badge variant="outline" className={`text-[8px] font-black uppercase tracking-tighter h-5 border-none
-                                        ${sub.fields.status.statusCategory.key === 'done' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-50 text-slate-400 dark:bg-slate-800'}`}>
-                                        {sub.fields.status.name}
+                                        ${sub.fields?.status?.statusCategory?.key === 'done' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30' : 'bg-slate-50 text-slate-400 dark:bg-slate-800'}`}>
+                                        {sub.fields?.status?.name || 'Status'}
                                     </Badge>
                                 </div>
                             )
