@@ -117,15 +117,18 @@ export function JiraSystemConfig() {
                     <Settings className="h-5 w-5 text-orange-500" />
                     <CardTitle>Jira System Configuration</CardTitle>
                 </div>
-                <CardDescription>
+                <div className="text-sm text-muted-foreground">
                     <div className="flex items-start gap-2 mt-2 p-3 bg-orange-500/10 rounded-md border border-orange-500/20">
                         <AlertCircle className="h-4 w-4 text-orange-500 mt-0.5" />
                         <div className="text-sm">
-                            <strong className="text-orange-500">Admin Only:</strong> These credentials are used by all users to access Jira.
-                            Users will NOT see these credentials - they are securely stored and accessed only by backend functions.
+                            <strong className="text-orange-500 font-bold text-xs uppercase tracking-wider block mb-1">Configuração de Sistema (Admin)</strong>
+                            <p className="text-slate-600 dark:text-slate-400 leading-snug">
+                                Estas credenciais são utilizadas globalmente para acessar o Jira Cloud.
+                                Os usuários finais não têm acesso a esses tokens.
+                            </p>
                         </div>
                     </div>
-                </CardDescription>
+                </div>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">

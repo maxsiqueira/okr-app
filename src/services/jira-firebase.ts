@@ -69,6 +69,10 @@ export const callFetchMultipleEpics = async (
     forceRefresh = false
 ): Promise<any[]> => {
     // Filter invalid keys
+    if (!Array.isArray(epicKeys)) {
+        console.error('[Firebase] epicKeys is not an array:', epicKeys);
+        return [];
+    }
     const validKeys = epicKeys.filter(k => k && typeof k === 'string' && k.trim().length > 0);
 
     console.log(`[Firebase] Fetching ${validKeys.length} epics via Firebase Function (filtered from ${epicKeys.length})`)

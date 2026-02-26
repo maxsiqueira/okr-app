@@ -163,7 +163,15 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
             else throw new HttpsError('failed-precondition', 'Jira not configured');
         }
 
-        const { url, email, token } = config;
+        // Robust mapping: users collection uses jiraToken, system_config uses token
+        const url = config.url || config.jiraUrl;
+        const email = config.email || config.jiraEmail;
+        const token = config.token || config.jiraToken;
+
+        if (!url || !email || !token) {
+            throw new HttpsError('failed-precondition', 'Jira configuration is incomplete (missing URL, Email, or Token)');
+        }
+
         let jiraUrl = url.trim().replace(/\/$/, '');
         if (!jiraUrl.startsWith('http')) jiraUrl = `https://${jiraUrl}`;
 
@@ -288,6 +296,10 @@ exports.fetchStrategicObjectives = onCall({ timeoutSeconds: 300, memory: '512MiB
 
         const sysDoc = await admin.firestore().collection('system_config').doc('jira').get();
         const { url, email, token } = sysDoc.data();
+        if (!url || !email || !token) {
+            throw new HttpsError('failed-precondition', 'Global Jira configuration is incomplete');
+        }
+
         let jiraUrl = url.trim().replace(/\/$/, '');
         if (!jiraUrl.startsWith('http')) jiraUrl = `https://${jiraUrl}`;
 
