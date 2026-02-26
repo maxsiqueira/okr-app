@@ -69,91 +69,104 @@ const LandingRedirect = () => {
   return <Navigate to="/strategic" replace />;
 }
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    },
+  },
+})
+
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="ion-ui-theme">
-      <AuthProvider>
-        <SettingsProvider>
-          <BrowserRouter>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/unauthorized" element={<Unauthorized />} />
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="dark" storageKey="ion-ui-theme">
+        <AuthProvider>
+          <SettingsProvider>
+            <BrowserRouter>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/unauthorized" element={<Unauthorized />} />
 
-                <Route element={
-                  <ProtectedRoute>
-                    <Layout />
-                  </ProtectedRoute>
-                }>
-                  <Route path="/" element={<LandingRedirect />} />
-
-                  <Route path="/strategic" element={
-                    <ProtectedRoute requiredPanel="strategic">
-                      <StrategicDashboard />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/okr" element={
-                    <ProtectedRoute requiredPanel="okr">
-                      <OkrTracking />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/epic-analysis" element={
-                    <ProtectedRoute requiredPanel="analysis">
-                      <EpicAnalysis />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/assessment" element={
-                    <ProtectedRoute requiredPanel="assessment">
-                      <OkrAssessment />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/strategic-objectives" element={
-                    <ProtectedRoute requiredPanel="strategic-objectives">
-                      <StrategicObjectives />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/manual-okrs" element={
-                    <ProtectedRoute requiredPanel="manual-okrs">
-                      <ManualOkrs />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/extra-analysis" element={
-                    <ProtectedRoute requiredPanel="extra-analysis">
-                      <ExtraEpicAnalysis />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/settings" element={
-                    <ProtectedRoute requiredPanel="settings">
-                      <SettingsPage />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/reports" element={
-                    <ProtectedRoute requiredPanel="reports">
-                      <Reports />
-                    </ProtectedRoute>
-                  } />
-
-                  <Route path="/status" element={
+                  <Route element={
                     <ProtectedRoute>
-                      <StatusPage />
+                      <Layout />
                     </ProtectedRoute>
-                  } />
-                </Route>
-              </Routes>
-            </Suspense>
-            <DebugOverlay />
-          </BrowserRouter>
-        </SettingsProvider>
-      </AuthProvider>
-    </ThemeProvider>
+                  }>
+                    <Route path="/" element={<LandingRedirect />} />
+
+                    <Route path="/strategic" element={
+                      <ProtectedRoute requiredPanel="strategic">
+                        <StrategicDashboard />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/okr" element={
+                      <ProtectedRoute requiredPanel="okr">
+                        <OkrTracking />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/epic-analysis" element={
+                      <ProtectedRoute requiredPanel="analysis">
+                        <EpicAnalysis />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/assessment" element={
+                      <ProtectedRoute requiredPanel="assessment">
+                        <OkrAssessment />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/strategic-objectives" element={
+                      <ProtectedRoute requiredPanel="strategic-objectives">
+                        <StrategicObjectives />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/manual-okrs" element={
+                      <ProtectedRoute requiredPanel="manual-okrs">
+                        <ManualOkrs />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/extra-analysis" element={
+                      <ProtectedRoute requiredPanel="extra-analysis">
+                        <ExtraEpicAnalysis />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/settings" element={
+                      <ProtectedRoute requiredPanel="settings">
+                        <SettingsPage />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/reports" element={
+                      <ProtectedRoute requiredPanel="reports">
+                        <Reports />
+                      </ProtectedRoute>
+                    } />
+
+                    <Route path="/status" element={
+                      <ProtectedRoute>
+                        <StatusPage />
+                      </ProtectedRoute>
+                    } />
+                  </Route>
+                </Routes>
+              </Suspense>
+              <DebugOverlay />
+            </BrowserRouter>
+          </SettingsProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   )
 }
 

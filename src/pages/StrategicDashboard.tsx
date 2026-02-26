@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
@@ -111,13 +112,7 @@ export function StrategicDashboard() {
         }
     }, [settings, user]) // Reactive to settings and user login
 
-    // Reload data when systemConfig or selectedVersion changes
-    useEffect(() => {
-        // Only load if we have a project key (initialized)
-        if (projectKey) {
-            loadData(projectKey, selectedVersion)
-        }
-    }, [systemConfig, selectedVersion, projectKey, user])
+    // Reload logic removed as useQuery handles it reactively
 
     const loadManualContext = () => {
         // Legacy manual OKRs could stay in localStorage for now if needed, 
@@ -133,22 +128,25 @@ export function StrategicDashboard() {
         return unsubscribe
     }
 
-    const loadData = async (project: string, version: string = "ALL") => {
-        setLoading(true)
-        setError(null)
-        try {
-            // Helper to safe parse keys from various sources (string, array, null)
+
+    // --- STRATEGIC DATA QUERY ---
+
+    const {
+        data: epicQueryResult,
+        error: epicQueryError
+    } = useQuery({
+        queryKey: ['strategicData', projectKey, selectedVersion, systemConfig, user?.uid],
+        queryFn: async () => {
+            if (!projectKey) return null
+
+            setWarning(null)
+
             const parseKeys = (val: any): string[] => {
                 if (!val) return []
                 if (Array.isArray(val)) return val
                 if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean)
                 return []
             }
-
-            // --- DATA LOADING STRATEGY (Waterfall) ---
-            // 1. Try User Specific Configuration
-            // 2. Try System/Admin Configuration
-            // 3. Fallback to Project Scan (All Epics)
 
             let fetchedOkr: JiraIssue[] = []
             let fetchedExtra: JiraIssue[] = []
@@ -159,117 +157,74 @@ export function StrategicDashboard() {
             const userExtraIds = parseKeys(user?.extraEpics)
 
             if (userOkrIds.length > 0 || userExtraIds.length > 0) {
-                console.log(`[Dashboard] Trying User Config:`, { okr: userOkrIds, extra: userExtraIds })
-
-                // Wrap in try-catch to satisfy Promise.all even if one fails
                 const [okrData, extraData] = await Promise.all([
-                    JiraService.getEpicsByKeys(userOkrIds, version).catch(err => {
-                        console.error("[Dashboard] OKR Epics load error:", err);
-                        if (err.message.includes('404')) setWarning("Algumas Iniciativas OKR não foram encontradas.")
-                        return [];
-                    }),
-                    JiraService.getEpicsByKeys(userExtraIds, version).catch(err => {
-                        console.error("[Dashboard] Extra Epics load error:", err);
-                        if (err.message.includes('404')) setWarning("Algumas Iniciativas Extras não foram encontradas.")
-                        return [];
-                    })
+                    JiraService.getEpicsByKeys(userOkrIds, selectedVersion).catch(() => []),
+                    JiraService.getEpicsByKeys(userExtraIds, selectedVersion).catch(() => [])
                 ])
-
                 if (okrData.length > 0 || extraData.length > 0) {
-                    fetchedOkr = okrData
-                    fetchedExtra = extraData
-                    fetchedAll = [...okrData, ...extraData]
-                } else {
-                    console.warn(`[Dashboard] User Config yielded no results. Falling back...`)
+                    fetchedOkr = okrData; fetchedExtra = extraData; fetchedAll = [...okrData, ...extraData]
                 }
             }
 
-            // 2. System/Admin Config (if User Config failed/empty)
+            // 2. System/Admin Config
             if (fetchedAll.length === 0) {
                 const sysOkrIds = parseKeys(systemConfig?.okr_epic_keys || localStorage.getItem("okr_epics"))
                 const sysExtraIds = parseKeys(systemConfig?.extra_epic_keys || localStorage.getItem("extra_epics"))
-
                 if (sysOkrIds.length > 0 || sysExtraIds.length > 0) {
-                    console.log(`[Dashboard] Trying System/Local Config:`, { okr: sysOkrIds, extra: sysExtraIds })
                     const [okrData, extraData] = await Promise.all([
-                        JiraService.getEpicsByKeys(sysOkrIds, version).catch(e => {
-                            console.error("[Dashboard] System OKR load error:", e);
-                            return [];
-                        }),
-                        JiraService.getEpicsByKeys(sysExtraIds, version).catch(e => {
-                            console.error("[Dashboard] System Extra load error:", e);
-                            return [];
-                        })
+                        JiraService.getEpicsByKeys(sysOkrIds, selectedVersion).catch(() => []),
+                        JiraService.getEpicsByKeys(sysExtraIds, selectedVersion).catch(() => [])
                     ])
-                    if (okrData.length > 0 || extraData.length > 0) {
-                        fetchedOkr = okrData
-                        fetchedExtra = extraData
-                        fetchedAll = [...okrData, ...extraData]
-                    }
+                    fetchedOkr = okrData; fetchedExtra = extraData; fetchedAll = [...okrData, ...extraData]
                 }
             }
 
-            // Fallback: If configured mode yielded nothing (stale config) OR no config exists
+            // 3. Fallback: Project Scan
             if (fetchedAll.length === 0) {
-                // Default Mode (Project Scan)
-                console.log(`[Dashboard] No specific epics found (or not configured). Scanning project ${project}...`)
-                try {
-                    fetchedAll = await JiraService.getEpics(project, version)
-                    fetchedOkr = fetchedAll
-                    fetchedExtra = []
-                } catch (scanErr: any) {
-                    console.error("[Dashboard] Project scan failed:", scanErr);
-                    if (scanErr.message?.includes('404')) {
-                        setWarning(`O Projeto "${project}" não foi encontrado ou você não tem permissão. Verifique o Key nas Configurações.`);
-                    } else {
-                        // For other errors in scan, we still want to show the error state if it's the only way to load data
-                        throw scanErr;
-                    }
-                }
+                fetchedAll = await JiraService.getEpics(projectKey, selectedVersion)
+                fetchedOkr = fetchedAll
             }
 
-            setOkrEpics(fetchedOkr)
-            setExtraEpics(fetchedExtra)
-            setAllEpics(fetchedAll)
+            return { fetchedOkr, fetchedExtra, fetchedAll }
+        },
+        enabled: !!projectKey && !!user,
+        staleTime: 5 * 60 * 1000,
+    })
 
-            if (fetchedAll.length === 0) {
-                // Determine what went wrong for the error message
-                const userConfigured = userOkrIds.length > 0 || userExtraIds.length > 0
-                const sysConfigured = (systemConfig?.okr_epic_keys || []).length > 0 || (systemConfig?.extra_epic_keys || []).length > 0
+    // Sync Query result to state
+    useEffect(() => {
+        if (epicQueryResult) {
+            setOkrEpics(epicQueryResult.fetchedOkr)
+            setExtraEpics(epicQueryResult.fetchedExtra)
+            setAllEpics(epicQueryResult.fetchedAll)
+            setLoading(false)
 
-                if (!warning) {
-                    if (userConfigured || sysConfigured) {
-                        setError(`Não foi possível carregar os Epics configurados (${userConfigured ? 'Perfil Usuário' : 'Sistema'}). Verifique as permissões no Jira ou as chaves configuradas.`)
-                    } else if (!project) {
-                        setError(`Nenhuma chave de projeto definida. Configure o Project Key ou adicione Epics específicos em Configurações.`)
-                    } else {
-                        setError(`Nenhum Epic encontrado no projeto "${project}". Tente outra chave ou configure Epics específicos.`)
-                    }
-                }
-            }
-
-            // Extract all unique versions for the dropdown
+            // Calculate metrics & versions
             const versions = new Set<string>()
-            fetchedAll.forEach(epic => {
+            epicQueryResult.fetchedAll.forEach(epic => {
                 if (epic.fields.fixVersions) {
-                    epic.fields.fixVersions.forEach(v => versions.add(v.name))
+                    (epic.fields.fixVersions as any[]).forEach((v: any) => versions.add(v.name))
                 }
             })
-            if (versions.size > 0) {
-                setAllVersions(Array.from(versions).sort())
-            }
+            setAllVersions(Array.from(versions).sort())
 
-            // Calculate quarterly metrics for OKR epics
-            if (fetchedOkr.length > 0) {
-                await calculateQuarterlyMetrics(fetchedOkr)
+            if (epicQueryResult.fetchedOkr.length > 0) {
+                calculateQuarterlyMetrics(epicQueryResult.fetchedOkr)
             }
-
-        } catch (err: any) {
-            console.error(err)
-            setError(err.message || `Failed to load epics. Check your credentials.`)
         }
-        setLoading(false)
-    }
+    }, [epicQueryResult])
+
+    useEffect(() => {
+        if (epicQueryError) {
+            setError((epicQueryError as Error).message)
+            setLoading(false)
+        }
+    }, [epicQueryError])
+
+    // The original `isStrategicLoading` was removed from destructuring, so this effect is no longer needed.
+    // useEffect(() => {
+    //     if (isStrategicLoading) setLoading(true)
+    // }, [isStrategicLoading])
 
     const handleProjectChange = (newKey: string) => {
         setProjectKey(newKey)

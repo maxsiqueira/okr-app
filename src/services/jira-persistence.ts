@@ -26,8 +26,11 @@ export class JiraPersistenceService {
             const epicRef = doc(db, 'user_settings', userId, 'epics', epicKey.toUpperCase())
 
             // We save the raw data plus a timestamp
+            // CRITICAL: Firestore does not allow 'undefined'. We must sanitize.
+            const sanitizedData = JSON.parse(JSON.stringify(data, (_, v) => v === undefined ? null : v));
+
             await setDoc(epicRef, {
-                ...data,
+                ...sanitizedData,
                 lastUpdated: new Date().toISOString(),
                 savedBy: userId
             })

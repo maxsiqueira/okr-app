@@ -20,7 +20,7 @@ const functions = getFunctions(app)
 export const callFetchEpicData = async (
     epicKey: string,
     forceRefresh = false
-): Promise<{ status: string, epic: any, children: any[], message?: string }> => {
+): Promise<{ status: string, epic: any, children: any[], message?: string, syncStats?: any }> => {
     if (!epicKey) {
         console.error(`[Firebase] callFetchEpicData aborted: Missing epicKey`);
         throw new Error('epicKey is required');
@@ -173,5 +173,26 @@ export const callFetchStrategicObjectives = async (
         console.error(`[Firebase] fetchStrategicObjectives failed:`, error)
         // Propagate error to let UI know
         throw new Error(error.message || "Failed to fetch project objectives")
+    }
+}
+/**
+ * Call getOkrMetrics (Executive Panel)
+ */
+export const callGetOkrMetrics = async (
+    projectKey: string = 'ION',
+    forceRefresh = false
+): Promise<any> => {
+    console.log(`[Firebase] Calling getOkrMetrics for ${projectKey}`)
+    const fn = httpsCallable(functions, 'getOkrMetrics')
+    try {
+        const res = await fn({ projectKey, forceRefresh }) as any
+        if (res.data) {
+            console.log(`[Firebase] getOkrMetrics success`)
+            return res.data
+        }
+        throw new Error('Empty response from getOkrMetrics')
+    } catch (error: any) {
+        console.error(`[Firebase] getOkrMetrics failed:`, error)
+        throw new Error(error.message || "Failed to fetch OKR metrics")
     }
 }

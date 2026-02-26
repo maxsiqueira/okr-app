@@ -2,99 +2,65 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // System config - Admin only
-    // System config - Read: All auth users (for shared settings), Write: Admin only
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is the owner
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // System config - Admin only for write, all auth for read
     match /system_config/{doc} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if isAdmin();
     }
     
-    // Jira cache - All authenticated users can read, only backend (Functions) can write
+    // Jira cache collections - Allow authenticated write for persistence
     match /jira_cache/{doc} {
-      allow read: if request.auth != null;
-      allow write: if false; // Only Firebase Functions can write
+      allow read, write: if request.auth != null; 
+    }
+    match /epic_progress_cache/{doc} {
+      allow read, write: if request.auth != null; 
+    }
+    match /extra_epics_summary/{doc} {
+      allow read, write: if request.auth != null; 
     }
     
     // Users - Self or admin
     match /users/{userId} {
-      allow read: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow write: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
     }
     
-    // User settings - Self only (UI preferences, no Jira credentials)
+    // User settings - Self only
     match /user_settings/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
       match /{allSubcollections=**} {
-        allow read, write: if request.auth.uid == userId;
+        allow read, write: if isOwner(userId);
       }
     }
     
-    // Epic progress cache (existing)
-    match /epic_progress_cache/{epicKey} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null; // Allow updates
-    }
-    
-    // Config (SMTP, etc) - Admin only
-    match /config/{doc} {
-      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    // Strategic Objectives - All authenticated users
-    match /strategic_objectives/{doc} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Manual OKRs - All authenticated users
-    match /manual_okrs/{doc} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Strategic Epics - All authenticated users
-    match /strategic_epics/{doc} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Strategic Teams - All authenticated users
-    match /strategic_teams/{doc} {
-      allow read, write: if request.auth != null;
-    }
+    // All other collections
+    match /strategic_objectives/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /manual_okrs/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /strategic_epics/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /strategic_teams/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /strategic_notes/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /time_entries/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /ai_insights/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /system_logs/{doc} { allow create: if request.auth != null; allow read: if isAdmin(); }
+    match /config/{doc} { allow read, write: if isAdmin(); }
+    match /calculation_rules/{doc} { allow read, write: if request.auth != null || isAdmin(); }
+    match /system_config/{doc} { allow read: if request.auth != null; allow write: if isAdmin(); }
 
-    // Strategic Notes - All authenticated users
-    match /strategic_notes/{doc} {
-      allow read, write: if request.auth != null;
-    }
-
-    // AI Insights - All authenticated users can read, Functions/Admin can write
-    match /ai_insights/{doc} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // Strategic Notes - All authenticated users
-    match /strategic_notes/{doc} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // System Logs - Authenticated users can write, Admin can read/write
-    match /system_logs/{doc} {
-      allow create: if request.auth != null;
-      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // New Multi-System Architectures
-    match /calculation_rules/{doc} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    match /time_entries/{doc} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Everything else - deny by default
+    // Admin catch-all: Override ANY denial for admins
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAdmin();
     }
   }
 }

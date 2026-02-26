@@ -16,7 +16,7 @@ import { httpsCallable } from "firebase/functions"
 
 export function SettingsPage() {
     const { user } = useAuth();
-    const { updateJiraSettings, updateEpicAnalysisSettings } = useSettings();
+    const { settings, updateJiraSettings, updateEpicAnalysisSettings, updateUISettings } = useSettings();
     const [isSyncing, setIsSyncing] = useState(false)
     const [lastSynced, setLastSynced] = useState<string>("Never")
 
@@ -33,6 +33,8 @@ export function SettingsPage() {
     const [autoRefresh, setAutoRefresh] = useState("0")
     const [logoUrlInput, setLogoUrlInput] = useState("")
     const [loginLogoInput, setLoginLogoInput] = useState("")
+    const [primaryColor, setPrimaryColor] = useState("#FF4200")
+    const [secondaryColor, setSecondaryColor] = useState("#333333")
     const [enableAi, setEnableAi] = useState(true)
 
     // Status State
@@ -66,6 +68,8 @@ export function SettingsPage() {
             setDebugMode(user.debugMode !== undefined ? user.debugMode : (localStorage.getItem("debug_mode") === "true"))
             setAutoRefresh(user.autoRefresh || localStorage.getItem("ion_auto_refresh_minutes") || "0")
             setLogoUrlInput(user.customLogo || localStorage.getItem("ion_custom_logo") || "")
+            setPrimaryColor(settings?.ui?.primaryColor || "#FF4200")
+            setSecondaryColor(settings?.ui?.secondaryColor || "#333333")
         } else {
             // Fallback if user context not ready (shouldn't happen due to protection)
             setJiraUrl(localStorage.getItem("jira_url") || "")
@@ -208,9 +212,13 @@ export function SettingsPage() {
                 await setDoc(doc(db, "users", user.uid), {
                     autoRefresh,
                     customLogo: logoUrlInput,
-                    // Login logo and global AI toggle might be considered "Device specific" or "Global"?
-                    // For now let's persist what makes sense for the user profile
                 }, { merge: true });
+
+                await updateUISettings({
+                    customLogoUrl: logoUrlInput,
+                    primaryColor,
+                    secondaryColor
+                });
             } catch (e) {
                 console.error("Failed to sync UI settings to cloud", e);
             }
@@ -451,6 +459,43 @@ export function SettingsPage() {
                                         <span className="block font-bold text-slate-700 dark:text-slate-200 text-xs">Ativar Inteligência Artificial</span>
                                         <span className="text-[10px] text-slate-500 font-medium leading-tight">Exibe o painel de insights estratégicos nas telas do sistema.</span>
                                     </Label>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                <Label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Cores da Marca (Live Branding)</Label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-[9px] font-bold text-slate-500">Cor Primária</Label>
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-11 h-11 rounded-lg border border-slate-200 shadow-sm shrink-0"
+                                                style={{ backgroundColor: primaryColor }}
+                                            />
+                                            <Input
+                                                type="text"
+                                                value={primaryColor}
+                                                onChange={e => setPrimaryColor(e.target.value)}
+                                                className="h-11 font-mono text-xs"
+                                                placeholder="#FF4200"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[9px] font-bold text-slate-500">Cor Secundária</Label>
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-11 h-11 rounded-lg border border-slate-200 shadow-sm shrink-0"
+                                                style={{ backgroundColor: secondaryColor }}
+                                            />
+                                            <Input
+                                                type="text"
+                                                value={secondaryColor}
+                                                onChange={e => setSecondaryColor(e.target.value)}
+                                                className="h-11 font-mono text-xs"
+                                                placeholder="#333333"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div className="md:col-span-2 flex justify-end">

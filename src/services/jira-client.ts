@@ -1,5 +1,5 @@
 import { JiraIssue } from "@/types/jira"
-import { callFetchEpicData, callFetchMultipleEpics, callFetchStrategicObjectives } from "./jira-firebase"
+import { callFetchEpicData, callFetchMultipleEpics, callFetchStrategicObjectives, callGetOkrMetrics } from "./jira-firebase"
 
 // Debug Store
 export let debugLogs: { timestamp: string, type: string, message: string, jql?: string, duration?: number, size?: number }[] = [];
@@ -84,18 +84,24 @@ export const JiraService = {
 
             const result = await callFetchEpicData(epicKey, forceRefresh)
 
-            if (result.status === 'success') {
-                console.log(`[JiraService] ✅ Epic data loaded successfully from Firebase Function`)
+            if (result.status === 'success' || result.status === 'stale') {
+                if (result.status === 'stale') {
+                    console.warn(`[JiraService] ⚠️ Data is STALE: ${result.message}`);
+                }
+                console.log(`[JiraService] ✅ Epic data loaded (${result.status}) from Firebase Function`)
 
                 const data = {
                     epic: result.epic,
-                    children: result.children || []
+                    children: result.children || [],
+                    isStale: result.status === 'stale',
+                    staleMessage: result.message || null,
+                    syncStats: result.syncStats || null
                 }
 
                 setCacheData(cacheKey, data)
                 addDebugLog({
-                    type: 'success',
-                    message: `Loaded epic ${epicKey} via Firebase Function`,
+                    type: result.status === 'stale' ? 'warning' : 'success',
+                    message: result.status === 'stale' ? `Loaded STALE epic ${epicKey}` : `Loaded epic ${epicKey} via Firebase Function`,
                     size: data.children.length
                 })
 
@@ -171,16 +177,21 @@ export const JiraService = {
             .filter(r => r !== null)
     },
 
-    // Stub: getOkrMetrics - not needed with firebase functions
-    getOkrMetrics: async (_forcedProjectKey?: string, _forceRefresh = false): Promise<any> => {
-        console.warn('[JiraService] getOkrMetrics() is deprecated')
-        return {
-            cycleTime: [],
-            aiAdoption: [],
-            epicStats: { total: 0, done: 0, percent: 0 },
-            investmentMix: [],
-            typeStats: {},
-            analystStats: []
+    // Updated: getOkrMetrics now uses Firebase Functions
+    getOkrMetrics: async (projectKey: string = 'ION', forceRefresh = false): Promise<any> => {
+        try {
+            return await callGetOkrMetrics(projectKey, forceRefresh)
+        } catch (error) {
+            console.error('[JiraService] getOkrMetrics failed:', error)
+            // Return empty structure as fallback to avoid UI crash
+            return {
+                cycleTime: [],
+                aiAdoption: [],
+                epicStats: { total: 0, done: 0, percent: 0 },
+                investmentMix: [],
+                typeStats: {},
+                analystStats: []
+            }
         }
     },
 

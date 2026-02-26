@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { JiraService } from "@/services/jira-client"
 import { JiraIssue } from "@/types/jira"
@@ -166,7 +167,7 @@ export function EpicAnalysis() {
     const [currentKey, setCurrentKey] = useState(initialKey.toUpperCase())
     const [searchKey, setSearchKey] = useState("")
 
-    const [data, setData] = useState<{ epic: JiraIssue, children: JiraIssue[] } | null>(null)
+    const [data, setData] = useState<{ epic: JiraIssue, children: JiraIssue[], isStale?: boolean, staleMessage?: string } | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [selectedQuarter, setSelectedQuarter] = useState("ALL")
@@ -177,22 +178,54 @@ export function EpicAnalysis() {
     const [cLevelNote, setCLevelNote] = useState("")
     const [isSavingNotes, setIsSavingNotes] = useState(false)
     const [timeEntries, setTimeEntries] = useState<any[]>([])
+    const [lastVisibleEntry, setLastVisibleEntry] = useState<any>(null)
+    const [hasMoreEntries, setHasMoreEntries] = useState(false)
+    const [isLoadingMoreEntries, setIsLoadingMoreEntries] = useState(false)
     const [isSavingEntry, setIsSavingEntry] = useState(false)
     const [newEntry, setNewEntry] = useState({ hours: "", description: "" })
+    const queryClient = useQueryClient()
 
-    // Check for missing Jira credentials on mount
-    useEffect(() => {
-        const jiraUrl = localStorage.getItem('jira_url')
-        const jiraEmail = localStorage.getItem('jira_email')
-        const jiraToken = localStorage.getItem('jira_token')
+    // --- HOOKS MOVED TO TOP (FIXES REACT ERROR #310) ---
 
-        if (!jiraUrl || !jiraEmail || !jiraToken) {
-            console.warn('[EpicAnalysis] ⚠️ Missing Jira credentials')
-            setMissingCredentials(true)
-            setError('Configurações Jira não encontradas. Por favor, configure nas Settings ou aguarde o admin configurar.')
-            setLoading(false)
+    // 1. Overall Epic Progress (Weighted Average by Story Points)
+    // "Total Major" includes ALL statuses except Cancelled
+    const allMajorIssues = useMemo(() => {
+        if (!data || !data.children) return [];
+        return data.children.filter(c => !c.fields?.issuetype?.subtask && !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
+    }, [data]);
+
+    const percentComplete = useMemo(() => {
+        const activeIssues = allMajorIssues.filter(i =>
+            !(i.fields?.status?.name || "").toLowerCase().includes("cancel")
+        );
+
+        if (activeIssues.length === 0) return 0;
+
+        // Try weighted progress (Story Points: customfield_10016)
+        let totalPoints = 0;
+        let completedPoints = 0;
+        let hasPoints = false;
+
+        activeIssues.forEach(i => {
+            const points = i.fields?.customfield_10016 || 0;
+            if (points > 0) hasPoints = true;
+            totalPoints += points;
+            if (i.fields.status.statusCategory.key === "done" || (i.fields?.status?.name || "").toLowerCase() === "finalizado") {
+                completedPoints += points;
+            }
+        });
+
+        if (hasPoints && totalPoints > 0) {
+            return Math.round((completedPoints / totalPoints) * 100);
         }
-    }, [])
+
+        // Fallback: Count-based if no story points are available
+        const doneIssues = activeIssues.filter(i =>
+            i.fields.status.statusCategory.key === "done" ||
+            (i.fields?.status?.name || "").toLowerCase() === "finalizado"
+        );
+        return Math.round((doneIssues.length / activeIssues.length) * 100);
+    }, [allMajorIssues]);
 
     // Sync currentKey with settings if it changes (e.g., updated on another device)
     useEffect(() => {
@@ -207,70 +240,108 @@ export function EpicAnalysis() {
         }
     }, [settings?.epicAnalysis?.defaultEpicKey, searchParams, currentKey])
 
+    // --- REACT QUERY INTEGRATION ---
+
+    const {
+        data: epicQueryResult,
+        error: epicQueryError
+    } = useQuery({
+        queryKey: ['epicDetails', currentKey],
+        queryFn: () => JiraService.getEpicDetails(currentKey, false),
+        enabled: !!currentKey && !missingCredentials,
+        staleTime: 5 * 60 * 1000, // 5 minutes cache
+    })
+
+    const {
+        data: extraEpicsQueryResult,
+    } = useQuery({
+        queryKey: ['extraEpics', settings?.epicAnalysis?.extraEpics],
+        queryFn: () => {
+            const keys = settings?.epicAnalysis?.extraEpics || []
+            if (keys.length === 0) return []
+            return JiraService.getBulkEpicDetails(keys)
+        },
+        enabled: !!settings?.epicAnalysis?.extraEpics?.length && !missingCredentials,
+        staleTime: 10 * 60 * 1000,
+    })
+
+    // Sync Query Result to legacy 'data' state for compatibility
     useEffect(() => {
-        if (currentKey && currentKey.trim() !== "" && !missingCredentials) {
-            loadEpic(currentKey)
-        } else {
-            // No epic key to load, stop loading immediately
+        if (epicQueryResult) {
+            setData(epicQueryResult)
+            setLoading(false)
+            setError(null)
+
+            // Background Persistence & Preference sync
+            import('@/services/jira-persistence').then(({ JiraPersistenceService }) => {
+                JiraPersistenceService.saveEpicData(currentKey, epicQueryResult)
+            })
+            if (currentKey !== settings?.epicAnalysis?.defaultEpicKey) {
+                updateEpicAnalysisSettings({ defaultEpicKey: currentKey })
+            }
+        }
+    }, [epicQueryResult, currentKey])
+
+    useEffect(() => {
+        if (epicQueryError) {
+            setError((epicQueryError as Error).message)
             setLoading(false)
         }
-    }, [currentKey, missingCredentials])
+    }, [epicQueryError])
 
-    const loadEpic = async (key: string, forceRefresh = false) => {
-        setLoading(!data) // Only show loading text if we don't have data yet
+    // Extra Epics transformation
+    useEffect(() => {
+        if (extraEpicsQueryResult) {
+            const transformed = extraEpicsQueryResult.map(({ epic }) => ({
+                id: epic.id,
+                key: epic.key,
+                summary: epic.fields.summary,
+                status: epic.fields.status.name,
+                progress: calculateTransformedProgress(epic),
+                hoursSpent: Math.round((epic.fields.aggregatetimespent || epic.fields.timespent || 0) / 36) / 100
+            }))
+            setExtraEpicsData(transformed)
+        }
+    }, [extraEpicsQueryResult])
+
+    function calculateTransformedProgress(epic: JiraIssue) {
+        if (epic.fields.status.statusCategory.key === 'done') return 100
+        const progress = epic.fields.progress?.percent || 0
+        return progress > 0 ? progress : 0
+    }
+
+    const handleSyncManual = async () => {
+        setLoading(true)
         setError(null)
         try {
-            const result = await JiraService.getEpicDetails(key, forceRefresh)
+            const result = await JiraService.getEpicDetails(currentKey, true)
             if (result) {
+                queryClient.setQueryData(['epicDetails', currentKey], result)
                 setData(result)
-                // Persistence: Save to Firestore (Data)
-                import('@/services/jira-persistence').then(({ JiraPersistenceService }) => {
-                    JiraPersistenceService.saveEpicData(key, result)
-                })
-
-                // Persistence: Save as Preference (Settings)
-                if (key !== settings?.epicAnalysis?.defaultEpicKey) {
-                    updateEpicAnalysisSettings({ defaultEpicKey: key })
-                }
-            } else {
-                // Fallback: Try loading from persistence if live fetch returns nothing/fails logic
-                throw new Error("Epic not found in live search")
             }
         } catch (err: any) {
-            console.error("Critical error in Epic Analysis:", err);
-            setError(err.message || "Erro desconhecido ao carregar dados do épico");
-            logToFirestore("error", "EpicAnalysis", err.message || "Unknown error", { epicKey: key });
-
-            try {
-                const { JiraPersistenceService } = await import('@/services/jira-persistence')
-                const cachedData = await JiraPersistenceService.loadEpicData(key)
-                if (cachedData) {
-                    setData(cachedData)
-                    console.log("Modo Offline: Dados carregados do cache (Sincronização falhou)")
-                    // Don't clear error entirely, possibly show it as a warning? 
-                    // For now, let's clear it to show the dashboard, but maybe keep a small indicator.
-                    setError(null)
-                } else {
-                    // Enhanced check for 404
-                    if (err.message?.includes('404')) {
-                        setError(`Epic ${key} não encontrado ou sem permissão. Verifique o Key ou as credenciais nas Settings.`);
-                    } else {
-                        throw err // Re-throw original error if no cache and not a 404
-                    }
-                }
-            } catch (persistErr) {
-                console.error("[EpicAnalysis] Final Error:", err)
-                // Use the Service error message directly to show Auth/Network/Not Found errors
-                const errorMessage = err?.message || "Failed to load epic details"
-                if (errorMessage.includes('404')) {
-                    setError(`[Jira Error 404] Epic ${key} não encontrado ou sem permissão de acesso. Verifique se o Key está correto e se você tem permissão no Jira.`);
-                } else {
-                    setError(errorMessage)
-                }
-            }
+            setError(err.message || "Falha na sincronização forçada")
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
+
+    // Check for missing Jira credentials on mount
+    useEffect(() => {
+        const jiraUrl = localStorage.getItem('jira_url')
+        const jiraEmail = localStorage.getItem('jira_email')
+        const jiraToken = localStorage.getItem('jira_token')
+
+        if (!jiraUrl || !jiraEmail || !jiraToken) {
+            setMissingCredentials(true)
+            setError('Configurações Jira não encontradas.')
+            setLoading(false)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!currentKey) setLoading(false)
+    }, [currentKey])
 
     // --- INITIALIZATION LOGIC (Multi-System) ---
     useEffect(() => {
@@ -349,24 +420,31 @@ export function EpicAnalysis() {
 
     // --- TIME ENTRIES (APONTAMENTOS) LOGIC ---
     useEffect(() => {
-        if (!currentKey) return
+        if (!currentKey || !auth.currentUser) return
         let unsubscribe: () => void = () => { }
 
         const initListener = async () => {
             try {
                 const { query, collection, where, onSnapshot, orderBy, limit } = await import('firebase/firestore');
+                if (!auth.currentUser) return;
+
+                // Initial query for the first 25 entries (Real-time snapshot for the head of the list)
                 const q = query(
                     collection(db, "time_entries"),
                     where("external_key", "==", currentKey),
                     orderBy("timestamp", "desc"),
-                    limit(50) // PAGINATION: Prevent expensive reads on large epics
+                    limit(25)
                 )
 
                 unsubscribe = onSnapshot(q, (snapshot) => {
                     const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                     setTimeEntries(entries)
+                    setLastVisibleEntry(snapshot.docs[snapshot.docs.length - 1])
+                    setHasMoreEntries(snapshot.docs.length === 25)
                 }, (err) => {
-                    console.error("[EpicAnalysis] Error loading time entries:", err)
+                    if (err.code !== 'permission-denied') {
+                        console.error("[EpicAnalysis] Error loading time entries:", err)
+                    }
                 })
             } catch (e) {
                 console.error("[EpicAnalysis] Listener setup failed:", e)
@@ -375,7 +453,34 @@ export function EpicAnalysis() {
 
         initListener()
         return () => unsubscribe()
-    }, [currentKey])
+    }, [currentKey, auth.currentUser])
+
+    const loadMoreEntries = async () => {
+        if (!lastVisibleEntry || !currentKey || isLoadingMoreEntries) return
+        setIsLoadingMoreEntries(true)
+
+        try {
+            const { query, collection, where, getDocs, orderBy, limit, startAfter } = await import('firebase/firestore');
+            const q = query(
+                collection(db, "time_entries"),
+                where("external_key", "==", currentKey),
+                orderBy("timestamp", "desc"),
+                startAfter(lastVisibleEntry),
+                limit(25)
+            )
+
+            const snapshot = await getDocs(q)
+            const newEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
+            setTimeEntries(prev => [...prev, ...newEntries])
+            setLastVisibleEntry(snapshot.docs[snapshot.docs.length - 1])
+            setHasMoreEntries(snapshot.docs.length === 25)
+        } catch (e) {
+            console.error("[EpicAnalysis] Error loading more entries:", e)
+        } finally {
+            setIsLoadingMoreEntries(false)
+        }
+    }
 
     const handleAddEntry = async () => {
         if (!currentKey || !newEntry.hours) return
@@ -400,73 +505,18 @@ export function EpicAnalysis() {
         }
     }
 
-    // 1. Overall Epic Progress (Weighted Average by Story Points)
-    // "Total Major" includes ALL statuses except Cancelled
-    const allMajorIssues = useMemo(() => {
-        if (!data || !data.children) return [];
-        return data.children.filter(c => !c.fields?.issuetype?.subtask && !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
-    }, [data]);
-
-    const percentComplete = useMemo(() => {
-        if (!allMajorIssues || allMajorIssues.length === 0) return 0;
-
-        let totalPoints = 0;
-        let weightedProgress = 0;
-
-        allMajorIssues.forEach(issue => {
-            // Use Story Points (customfield_10016), default to weight 1 if missing
-            const points = issue.fields?.customfield_10016 || 1;
-
-            // Progress field is calculated by the backend (includes 100% for Done items)
-            const progress = issue.fields?.progress || 0;
-
-            totalPoints += points;
-            weightedProgress += (progress * points);
-        });
-
-        return totalPoints > 0 ? Math.round(weightedProgress / totalPoints) : 0;
-    }, [allMajorIssues]);
-
     useEffect(() => {
         const extraKeysStr = localStorage.getItem("extra_epics") || ""
         if (extraKeysStr) {
             const keys = extraKeysStr.split(",").map(k => k.trim()).filter(k => k.length > 0)
             if (keys.length > 0) {
-                loadExtraEpics(keys)
+                // loadExtraEpics(keys) // This was removed as extra epics are now fetched via React Query
             }
         }
     }, [])
 
-
-    const loadExtraEpics = async (keys: string[], forceRefresh = false) => {
-        try {
-            const results = await JiraService.getEpicsByKeys(keys, "ALL", forceRefresh)
-            // Transform data to convert timespent from seconds to hours
-            const transformedData = results.map(epic => ({
-                ...epic,
-                // Use aggregatetimespent (total including children) instead of timespent (often null for Epics)
-                hoursSpent: Math.round((epic.fields.aggregatetimespent || epic.fields.timespent || 0) / 36) / 100
-            }))
-            setExtraEpicsData(transformedData)
-
-            // Persistence: Save Extra Epics
-            import('@/services/jira-persistence').then(({ JiraPersistenceService }) => {
-                JiraPersistenceService.saveExtraEpicsData(transformedData)
-            })
-
-        } catch (err) {
-            console.warn("[EpicAnalysis] Live extra epics fetch failed, attempting persistence...", err)
-            try {
-                const { JiraPersistenceService } = await import('@/services/jira-persistence')
-                const cachedExtras = await JiraPersistenceService.loadExtraEpicsData()
-                if (cachedExtras && cachedExtras.length > 0) {
-                    setExtraEpicsData(cachedExtras)
-                }
-            } catch (persistErr) {
-                console.error("[EpicAnalysis] Error loading extra epics:", err)
-            }
-        }
-    }
+    // --- EXTRA EPICS FETCHING (LEGACY ADAPTOR) ---
+    // Now handled by React Query + extraEpicsData state
 
 
     const handleSearch = (e: React.FormEvent) => {
@@ -511,69 +561,76 @@ export function EpicAnalysis() {
 
     if (error || !data) {
         return (
-            <div className="p-8 space-y-4">
-                <h2 className="text-2xl font-bold text-red-500">Error Loading Epic</h2>
-                <p>{error}</p>
-                {missingCredentials && (
-                    <div className="flex gap-2">
-                        <Button
-                            onClick={() => navigate('/settings')}
-                            variant="default"
-                            className="gap-2"
-                        >
-                            <Settings className="h-4 w-4" />
-                            Go to Settings
-                        </Button>
+            <div className="p-8 space-y-6 max-w-4xl mx-auto">
+                <div className="bg-rose-50 border border-rose-100 rounded-[32px] p-8 space-y-4 shadow-sm">
+                    <div className="flex items-center gap-4 text-rose-600">
+                        <div className="w-12 h-12 bg-rose-100 rounded-2xl flex items-center justify-center">
+                            <Zap size={24} />
+                        </div>
+                        <h2 className="text-2xl font-black uppercase tracking-tight">Erro ao Carregar Epic</h2>
                     </div>
-                )}
-                <div className="max-w-md">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-                        <form onSubmit={handleSearch} className="flex gap-2 w-full md:max-w-md">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                                <Input
-                                    placeholder="Jira Epic Key (ex: ION-123)"
-                                    className="pl-9 h-10 border-slate-200 focus-visible:ring-primary/20"
-                                    value={searchKey}
-                                    onChange={(e) => setSearchKey(e.target.value)}
-                                />
-                            </div>
-                            <Button type="submit" className="h-10 px-6 font-bold shadow-lg shadow-primary/20">Analisar</Button>
+                    <p className="text-rose-700/70 font-medium leading-relaxed">{error || "Não foi possível recuperar os dados do Jira."}</p>
+
+                    {missingCredentials && (
+                        <div className="pt-4 flex gap-3">
+                            <Button
+                                onClick={() => navigate('/settings')}
+                                variant="default"
+                                className="bg-[#001540] hover:bg-[#001540]/90 text-white gap-2 px-6 h-12 rounded-2xl font-bold"
+                            >
+                                <Settings className="h-4 w-4" />
+                                Configurar Jira
+                            </Button>
+                        </div>
+                    )}
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[32px] p-8 shadow-xl">
+                    <h3 className="text-lg font-black text-[#001540] dark:text-white uppercase mb-4">Tentar Outro ou Sincronizar</h3>
+                    <div className="flex flex-col md:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                            <Input
+                                placeholder="Jira Epic Key (ex: ION-123)"
+                                className="pl-12 h-14 text-lg rounded-2xl border-slate-200 focus:ring-[#FF4200]/20"
+                                value={searchKey}
+                                onChange={(e) => setSearchKey(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={handleSearch}
+                                className="h-14 px-8 bg-[#001540] hover:bg-[#001540]/90 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-slate-900/10"
+                            >
+                                Analisar
+                            </Button>
                             {!missingCredentials && (
                                 <Button
-                                    type="button"
                                     variant="outline"
-                                    className="h-10 gap-2 border-slate-200"
-                                    onClick={() => {
-                                        loadEpic(currentKey, true)
-                                        const extraKeysStr = localStorage.getItem("extra_epics") || ""
-                                        if (extraKeysStr) {
-                                            const keys = extraKeysStr.split(",").map(k => k.trim()).filter(k => k.length > 0)
-                                            if (keys.length > 0) loadExtraEpics(keys, true)
-                                        }
-                                    }}
+                                    className="h-14 gap-2 border-slate-200 rounded-2xl hover:bg-slate-50 transition-all px-6"
+                                    onClick={() => handleSyncManual()}
                                     disabled={loading}
                                 >
-                                    <TrendingUp className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                                    Sync
+                                    <TrendingUp className={`h-5 w-5 text-[#FF4200] ${loading ? "animate-spin" : ""}`} />
+                                    <span className="font-black text-[#FF4200] hidden sm:inline uppercase tracking-tight">SYNC AGORA</span>
                                 </Button>
                             )}
-                        </form>
+                        </div>
                     </div>
                 </div>
             </div>
         )
     }
 
-    const { epic, children } = data
+    const { epic, children, syncStats } = data as any
 
     // 1. Prepare FLATTENED list of all issues (Stories/Tasks + Subtasks) for metric consistency
-    const allAtoms = children.flatMap(c => [c, ...(c.subtasks || [])])
+    const allAtoms = children.flatMap((c: any) => [c, ...(c.subtasks || [])])
 
     // 1b. Helper to get the most relevant year for the trend chart
     const calculateStatsForYear = (year: number) => {
         const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
-        allAtoms.forEach(issue => {
+        allAtoms.forEach((issue: any) => {
             const isDone = issue.fields.status.statusCategory.key === 'done'
             const dStr = issue.fields.resolutiondate || issue.fields.updated
             if (isDone && dStr) {
@@ -620,8 +677,7 @@ export function EpicAnalysis() {
         Q3: [] as JiraIssue[],
         Q4: [] as JiraIssue[]
     }
-
-    allAtoms.filter(i => !i.fields.issuetype.subtask && i.fields.status.statusCategory.key === 'done').forEach(issue => {
+    allAtoms.filter((i: any) => !i.fields.issuetype.subtask && i.fields.status.statusCategory.key === 'done').forEach((issue: any) => {
         const dStr = issue.fields.resolutiondate || issue.fields.updated
         if (dStr) {
             const d = new Date(dStr)
@@ -636,8 +692,8 @@ export function EpicAnalysis() {
     })
 
     // 2. Filter Logic for UI: Deep include parents if subtasks match
-    const filteredChildren = children.filter(child => {
-        const versionMatch = selectedVersion === "ALL" || (child.fields.fixVersions?.some(v => v.name === selectedVersion))
+    const filteredChildren = children.filter((child: any) => {
+        const versionMatch = selectedVersion === "ALL" || (child.fields.fixVersions?.some((v: any) => v.name === selectedVersion))
             || (selectedVersion === "Unscheduled" && (!child.fields.fixVersions || child.fields.fixVersions.length === 0))
 
         if (!versionMatch) return false
@@ -663,26 +719,26 @@ export function EpicAnalysis() {
         }
 
         const selfMatches = checkIssueMatches(child)
-        const anySubMatches = child.subtasks?.some(s => checkIssueMatches(s))
+        const anySubMatches = child.subtasks?.some((s: any) => checkIssueMatches(s))
 
         return selfMatches || anySubMatches
     })
 
-    const allVersions = Array.from(new Set(children.flatMap(c => c.fields.fixVersions?.map(v => v.name) || []))).sort()
+    const allVersions = Array.from(new Set(children.flatMap((c: any) => c.fields.fixVersions?.map((v: any) => v.name) || []))).sort() as string[]
 
     // UPDATE METRICS TO USE FILTERED LIST (Children + Subtasks)
-    const allFilteredIssues = filteredChildren.flatMap(c => [c, ...(c.subtasks || [])])
+    const allFilteredIssues = filteredChildren.flatMap((c: any) => [c, ...(c.subtasks || [])])
 
-    const activeIssuesFiltered = allFilteredIssues.filter(c => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
+    const activeIssuesFiltered = allFilteredIssues.filter((c: any) => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
 
     // Correct categorization using subtask field
-    const majorIssuesFiltered = activeIssuesFiltered.filter(i => !i.fields.issuetype.subtask)
+    const majorIssuesFiltered = activeIssuesFiltered.filter((i: any) => !i.fields.issuetype.subtask)
 
     // MAJOR METRICS (Lead for KPIs and Charts - Reacts to filters)
-    const majorDone = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "done").length
-    const majorInProgress = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "indeterminate").length
-    const majorToDo = majorIssuesFiltered.filter(i => i.fields.status.statusCategory.key === "new").length
-    const majorCancelled = allFilteredIssues.filter(i => (i.fields?.status?.name || "").toLowerCase().includes("cancel") && !i.fields?.issuetype?.subtask).length
+    const majorDone = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "done").length
+    const majorInProgress = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "indeterminate").length
+    const majorToDo = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "new").length
+    const majorCancelled = allFilteredIssues.filter((i: any) => (i.fields?.status?.name || "").toLowerCase().includes("cancel") && !i.fields?.issuetype?.subtask).length
 
     // SUBTASK METRICS (Secondary details)
     // subDone, subInProgress, subToDo removed as they were not used in UI
@@ -693,7 +749,7 @@ export function EpicAnalysis() {
 
     // COUNTER METRICS - Use RAW children data (not filtered by version/quarter)
     // This ensures counters show the TOTAL count across the entire Epic
-    const allActiveChildren = children.filter(c => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
+    const allActiveChildren = children.filter((c: any) => !(c.fields?.status?.name || "").toLowerCase().includes("cancel"))
 
     // Helper functions for classification
     const normalizeType = (c: JiraIssue) => (c.fields?.issuetype?.name || "").trim().toLowerCase()
@@ -719,7 +775,7 @@ export function EpicAnalysis() {
     const globalBlockCount = children.filter(isBlock).length
 
     // Task is a CATCH-ALL for direct children that aren't Stories, Bugs, or Blocks
-    const globalTaskCount = children.filter(c => !isStory(c) && !isBug(c) && !isBlock(c)).length
+    const globalTaskCount = children.filter((c: any) => !isStory(c) && !isBug(c) && !isBlock(c)).length
 
     // Subtasks counter: Sum of ALL subtasks from ALL children (raw total)
     // This matches the user's JQL: "parent in (...) AND issuetype = Sub-task"
@@ -735,7 +791,7 @@ export function EpicAnalysis() {
         allActiveChildren: allActiveChildren.length,
         filteredChildren: filteredChildren.length,
         activeFilteredChildren: activeIssuesFiltered.length,
-        issueTypesFound: Array.from(new Set(allActiveChildren.map(c => c.fields.issuetype.name))),
+        issueTypesFound: Array.from(new Set(allActiveChildren.map((c: any) => c.fields.issuetype.name))),
         counters: {
             stories: globalStoryCount,
             tasks: globalTaskCount,
@@ -766,7 +822,7 @@ export function EpicAnalysis() {
     // Calculations moved after loop
 
 
-    filteredChildren.forEach(child => {
+    filteredChildren.forEach((child: any) => {
         // Use AGGREGATE time from the child if available, which matches Jira's internal rollup.
         // Fallback to timespent + subtasks sum if aggregate is missing.
         let seconds: number = child.fields.aggregatetimespent ?? 0;
@@ -775,7 +831,7 @@ export function EpicAnalysis() {
         if (!hasAggregate) {
             seconds = child.fields.timespent || 0
             if (child.subtasks) {
-                child.subtasks.forEach(sub => { seconds += (sub.fields.timespent || 0) })
+                child.subtasks.forEach((sub: any) => { seconds += (sub.fields.timespent || 0) })
             }
         }
 
@@ -785,9 +841,9 @@ export function EpicAnalysis() {
 
         const hours = seconds / 3600
         if (hours > 0) {
-            const groups = child.fields.components?.length ? child.fields.components.map(c => c.name) : ["General"]
+            const groups = child.fields.components?.length ? child.fields.components.map((c: any) => c.name) : ["General"]
             const hoursPerGroup = hours / groups.length
-            groups.forEach(group => {
+            groups.forEach((group: any) => {
                 const current = workloadMap.get(group) || 0
                 workloadMap.set(group, current + hoursPerGroup)
             })
@@ -820,8 +876,8 @@ export function EpicAnalysis() {
     allFilteredIssues.forEach((issue: JiraIssue) => {
         const cat = issue.fields.status.statusCategory.key
 
-        const comps = issue.fields.components?.length ? issue.fields.components.map(c => c.name) : ["General"]
-        comps.forEach(comp => {
+        const comps = issue.fields.components?.length ? (issue.fields.components as any[]).map((c: any) => c.name) : ["General"]
+        comps.forEach((comp: any) => {
             const cStats = componentStats.get(comp) || { done: 0, wip: 0, todo: 0, cancelled: 0 }
             if (cat === 'done') cStats.done++
             else if (cat === 'indeterminate') cStats.wip++
@@ -884,10 +940,49 @@ export function EpicAnalysis() {
                         <h2 className="text-3xl font-black text-[#001540] dark:text-white tracking-tighter uppercase leading-none">
                             {epic.key}: <span className="text-[#FF4200]">{epic.fields.summary}</span>
                         </h2>
-                        <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">Análise Detalhada de Iniciativa</p>
+                        <div className="flex items-center gap-2 mt-1">
+                            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Análise Detalhada</p>
+                            {syncStats && (
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
+                                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">
+                                        V{syncStats.apiVersion} • Sync: {new Date(syncStats.timestamp).toLocaleTimeString()}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
+
+                {data?.isStale && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2 flex items-center gap-3 animate-pulse">
+                        <div className="w-2 h-2 bg-amber-500 rounded-full" />
+                        <p className="text-[11px] font-black text-amber-700 uppercase tracking-tight">
+                            Modo Offline: {data.staleMessage || 'Exibindo dados do cache devido a instabilidade no Jira.'}
+                        </p>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-3">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 gap-2 border-[#FF4200]/30 bg-orange-50/50 hover:bg-orange-100/50 rounded-xl transition-all"
+                        onClick={() => {
+                            handleSyncManual()
+                            const extraKeysStr = localStorage.getItem("extra_epics") || ""
+                            if (extraKeysStr) {
+                                // Extra epics are reactive to Settings changes
+                            }
+                        }}
+                        disabled={loading}
+                    >
+                        <TrendingUp className={`h-4 w-4 text-[#FF4200] ${loading ? "animate-spin" : ""}`} />
+                        <span className="text-[11px] font-black text-[#FF4200] uppercase tracking-wider">Sincronizar Jira</span>
+                    </Button>
+
+                    <div className="w-px h-8 bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block" />
+
                     <form onSubmit={handleSearch} className="flex gap-2">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -902,6 +997,65 @@ export function EpicAnalysis() {
                     </form>
                 </div>
             </div>
+
+            {allAtoms.length === 0 && !loading && (
+                <div className="bg-orange-50 border-2 border-dashed border-orange-200 rounded-3xl p-8 text-center space-y-4">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto shadow-sm">
+                        <TrendingUp className="w-8 h-8 text-[#FF4200]" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-orange-900 uppercase">Dados Não Encontrados</h3>
+                        <p className="text-orange-700/60 font-medium pb-2">O Jira não retornou itens para este Epic ou o cache está vazio.</p>
+                        {syncStats && (
+                            <div className="bg-orange-100/50 rounded-xl p-3 text-left max-w-md mx-auto mb-4 border border-orange-200">
+                                <p className="text-[9px] font-black text-orange-800 uppercase mb-1">Diagnóstico de Sincronização:</p>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                    <span className="text-[10px] text-orange-700 font-bold uppercase">Status:</span>
+                                    <span className="text-[10px] text-orange-950 font-black">{(data as any).isStale ? 'STALE' : 'LIVE'}</span>
+                                    <span className="text-[10px] text-orange-700 font-bold uppercase">API Version:</span>
+                                    <span className="text-[10px] text-orange-950 font-black">v{syncStats.apiVersion}</span>
+                                    <span className="text-[10px] text-orange-700 font-bold uppercase">JQL Sucesso:</span>
+                                    <span className="text-[10px] text-orange-950 font-black truncate">
+                                        {syncStats.successfulJql === 'discovery_links' ? 'Links Discovery (Vinculados Manualmente)' : syncStats.successfulJql}
+                                    </span>
+                                </div>
+                                {syncStats.successfulJql === 'none' && (
+                                    <div className="mt-3 p-3 bg-red-100/50 border border-red-200 rounded-xl">
+                                        <p className="text-[10px] text-red-900 font-bold leading-tight">
+                                            💡 DICA: O Jira não encontrou itens vinculados. Verifique se as histórias dentro do Epic estão com o campo "Épico" preenchido no Jira.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {(syncStats as any).searchAttempts && (syncStats as any).searchAttempts.length > 0 && (
+                                    <div className="mt-4 border-t border-orange-200 pt-3">
+                                        <p className="text-[9px] font-black text-orange-850 uppercase mb-2">Histórico de Tentativas (X-Ray):</p>
+                                        <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                            {(syncStats as any).searchAttempts.map((attempt: any, idx: number) => (
+                                                <div key={idx} className="flex flex-col text-[8px] bg-white/50 p-1.5 rounded border border-orange-100">
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <span className="font-mono text-orange-900 break-all leading-tight">{attempt.jql}</span>
+                                                        <span className={`px-1 rounded-sm font-black whitespace-nowrap ${attempt.count > 0 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-600'}`}>
+                                                            v{attempt.api}: {attempt.count ?? 'ERR'}
+                                                        </span>
+                                                    </div>
+                                                    {attempt.error && <span className="text-red-600 font-bold mt-0.5 italic">Error: {attempt.error}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <Button
+                        onClick={() => handleSyncManual()}
+                        className="bg-[#FF4200] hover:bg-[#E63B00] text-white px-8 h-12 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-orange-500/20"
+                    >
+                        Forçar Sincronização Agora
+                    </Button>
+                </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3 mb-6">
                 <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
@@ -982,16 +1136,21 @@ export function EpicAnalysis() {
                 </div>
 
                 {/* 5. SAÚDE DA INICIATIVA */}
-                <div className="bg-[#8B5CF6] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-purple-200/50 relative overflow-hidden group">
+                <div className={`p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl relative overflow-hidden group transition-colors duration-500
+                    ${percentComplete >= 80 ? 'bg-emerald-500 shadow-emerald-200/50' :
+                        percentComplete >= 40 ? 'bg-[#8B5CF6] shadow-purple-200/50' :
+                            'bg-amber-500 shadow-amber-200/50'}`}>
                     <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700" />
                     <div className="flex justify-between items-start mb-4 relative z-10">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Saúde da Iniciativa</p>
                         <TrendingUp size={16} className="text-white/40" />
                     </div>
                     <div className="relative z-10">
-                        <h2 className="text-5xl font-black leading-none">94%</h2>
+                        <h2 className="text-5xl font-black leading-none">{percentComplete > 0 ? Math.min(100, Math.round(percentComplete * 1.1)) : 0}%</h2>
                     </div>
-                    <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">On-Track</p>
+                    <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">
+                        {percentComplete >= 80 ? 'EXCELLENT' : percentComplete >= 50 ? 'ON-TRACK' : percentComplete > 0 ? 'AT RISK' : 'WAITING'}
+                    </p>
                 </div>
 
                 {/* 6. PROGRESSO GERAL (ORANGE) */}
@@ -1333,6 +1492,17 @@ export function EpicAnalysis() {
                                             </span>
                                         </div>
                                     ))}
+                                    {hasMoreEntries && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={loadMoreEntries}
+                                            disabled={isLoadingMoreEntries}
+                                            className="w-full text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
+                                        >
+                                            {isLoadingMoreEntries ? "Carregando..." : "Ver mais apontamentos"}
+                                        </Button>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="h-32 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-800/20 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
@@ -1354,7 +1524,7 @@ export function EpicAnalysis() {
                 </CardHeader>
                 <CardContent className="pt-6">
                     <div className="space-y-4">
-                        {filteredChildren.map(task => <TaskRow key={task.id} task={task} />)}
+                        {filteredChildren.map((task: any) => <TaskRow key={task.id} task={task} />)}
                     </div>
                 </CardContent>
             </Card>
