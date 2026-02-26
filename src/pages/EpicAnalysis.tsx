@@ -171,6 +171,7 @@ export function EpicAnalysis() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [selectedQuarter, setSelectedQuarter] = useState("ALL")
+    const [selectedYear, setSelectedYear] = useState("AUTO")
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [extraEpicsData, setExtraEpicsData] = useState<any[]>([])
     const [missingCredentials, setMissingCredentials] = useState(false)
@@ -201,30 +202,28 @@ export function EpicAnalysis() {
 
         if (activeIssues.length === 0) return 0;
 
-        // Try weighted progress (Story Points: customfield_10016)
-        let totalPoints = 0;
-        let completedPoints = 0;
-        let hasPoints = false;
+        let totalProgressSum = 0;
+        let totalWeight = 0;
 
         activeIssues.forEach(i => {
-            const points = i.fields?.customfield_10016 || 0;
-            if (points > 0) hasPoints = true;
-            totalPoints += points;
-            if (i.fields.status.statusCategory.key === "done" || (i.fields?.status?.name || "").toLowerCase() === "finalizado") {
-                completedPoints += points;
+            const weight = i.fields?.customfield_10016 || 1; // Story Points or 1
+            totalWeight += weight;
+
+            // Priority 1: Jira's internal progress field
+            let issueProgress = i.fields?.progress?.progress || i.progress || null;
+
+            // Priority 2: Status Category logic
+            if (issueProgress === null) {
+                const statusCat = i.fields.status.statusCategory.key;
+                if (statusCat === 'done') issueProgress = 100;
+                else if (statusCat === 'indeterminate') issueProgress = 50;
+                else issueProgress = 0;
             }
+
+            totalProgressSum += (issueProgress * weight);
         });
 
-        if (hasPoints && totalPoints > 0) {
-            return Math.round((completedPoints / totalPoints) * 100);
-        }
-
-        // Fallback: Count-based if no story points are available
-        const doneIssues = activeIssues.filter(i =>
-            i.fields.status.statusCategory.key === "done" ||
-            (i.fields?.status?.name || "").toLowerCase() === "finalizado"
-        );
-        return Math.round((doneIssues.length / activeIssues.length) * 100);
+        return Math.round(totalProgressSum / (totalWeight || 1));
     }, [allMajorIssues]);
 
     // Sync currentKey with settings if it changes (e.g., updated on another device)
@@ -585,7 +584,8 @@ export function EpicAnalysis() {
                     )}
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[32px] p-8 shadow-xl">
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[32px] p-8 shadow-xl relative">
+                    <div className="absolute top-4 right-8 text-[8px] text-slate-300 font-mono">V_2025_02_26_1537</div>
                     <h3 className="text-lg font-black text-[#001540] dark:text-white uppercase mb-4">Tentar Outro ou Sincronizar</h3>
                     <div className="flex flex-col md:flex-row gap-3">
                         <div className="relative flex-1">
@@ -604,6 +604,9 @@ export function EpicAnalysis() {
                             >
                                 Analisar
                             </Button>
+                            <div className="absolute -bottom-6 right-0 text-[10px] font-black text-[#FF4200] animate-pulse">
+                                BUILD: 2025-02-26-1543-TICKETS
+                            </div>
                             {!missingCredentials && (
                                 <Button
                                     variant="outline"
@@ -630,8 +633,9 @@ export function EpicAnalysis() {
     // 1b. Helper to get the most relevant year for the trend chart
     const calculateStatsForYear = (year: number) => {
         const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
-        allAtoms.forEach((issue: any) => {
-            const isDone = issue.fields.status.statusCategory.key === 'done'
+        // Changed to use children (tickets) only, per user request: "baseados em tickets"
+        children.forEach((issue: any) => {
+            const isDone = issue.fields.status.statusCategory.key === 'done' || (issue.fields.status.name || "").toLowerCase().includes("finalizado")
             const dStr = issue.fields.resolutiondate || issue.fields.updated
             if (isDone && dStr) {
                 const d = new Date(dStr)
@@ -649,19 +653,31 @@ export function EpicAnalysis() {
 
     const currentYear = new Date().getFullYear()
     const yearsToTry = [currentYear, currentYear - 1, currentYear - 2]
+
     let bestYearStats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
-    let displayYear = currentYear
+    let displayYear = selectedYear === "AUTO" ? currentYear : parseInt(selectedYear)
     let maxDoneVolume = -1
 
-    yearsToTry.forEach(y => {
-        const s = calculateStatsForYear(y)
-        const total = Object.values(s).reduce((a, b) => a + b, 0)
-        if (total > maxDoneVolume) {
-            maxDoneVolume = total
-            bestYearStats = s
-            displayYear = y
+    if (selectedYear === "AUTO") {
+        displayYear = 2025 // Default to 2025 as it's the current target
+        yearsToTry.forEach(y => {
+            const s = calculateStatsForYear(y)
+            const total = Object.values(s).reduce((a, b) => a + b, 0)
+            if (total > maxDoneVolume && total > 0) {
+                maxDoneVolume = total
+                bestYearStats = s
+                displayYear = y
+            }
+        })
+        // If still no data found, stick with 2025
+        if (maxDoneVolume <= 0) {
+            displayYear = 2025
+            bestYearStats = calculateStatsForYear(2025)
         }
-    })
+    } else {
+        displayYear = parseInt(selectedYear)
+        bestYearStats = calculateStatsForYear(displayYear)
+    }
 
     const quarterlyData = [
         { quarter: 'Q1', count: bestYearStats.Q1, color: '#3B82F6' },
@@ -699,7 +715,7 @@ export function EpicAnalysis() {
         if (!versionMatch) return false
         if (selectedQuarter === "ALL") return true
 
-        const qYear = new Date().getFullYear()
+        const qYear = displayYear
         let qStartMonth = 0; let qEndMonth = 11
         switch (selectedQuarter) {
             case "Q1": qStartMonth = 0; qEndMonth = 2; break;
@@ -1066,6 +1082,14 @@ export function EpicAnalysis() {
                     </select>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+                    <select className="bg-transparent border-none text-[10px] font-black uppercase tracking-wider px-3 py-1 outline-none" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+                        <option value="AUTO">ANO: AUTOMÁTICO</option>
+                        <option value="2026">ANO: 2026</option>
+                        <option value="2025">ANO: 2025</option>
+                        <option value="2024">ANO: 2024</option>
+                    </select>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
                     <select className="bg-transparent border-none text-[10px] font-black uppercase tracking-wider px-3 py-1 outline-none" value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)}>
                         <option value="ALL">TODOS OS PERÍODOS</option>
                         <option value="Q1">Q1 (JAN-MAR)</option>
@@ -1076,47 +1100,54 @@ export function EpicAnalysis() {
                 </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-8">
-                {/* 1. ITENS TOTAIS */}
-                <div className="bg-[#001540] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50">
+            <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7 mb-8">
+                {/* BUILD_MARKER: 2025_REFRESH_V1 */}
+                {/* 1. FINALIZADAS */}
+                <div className="bg-emerald-500 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-emerald-200/50 group">
                     <div className="flex justify-between items-start mb-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Itens Totais</p>
-                        <ListTodo size={16} className="text-white/30" />
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                        <h2 className="text-5xl font-black leading-none">{children.length + globalSubtaskCount}</h2>
-                    </div>
-                    <p className="text-[10px] font-bold text-white/40 mt-3 uppercase tracking-wider">Ativos no Jira</p>
-                </div>
-
-                {/* 2. HISTÓRIAS */}
-                <div className="bg-[#001540] p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50 relative overflow-hidden">
-                    <div className="absolute right-0 top-0 p-4 opacity-10">
-                        <TrendingUp size={64} />
-                    </div>
-                    <div className="flex justify-between items-start mb-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Histórias</p>
-                        <Sparkles size={16} className="text-[#FF4200]" />
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                        <h2 className="text-5xl font-black leading-none">{globalStoryCount}</h2>
-                        <span className="text-lg font-black text-white/60">/{globalStoryCount + globalTaskCount}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/10 rounded-full mt-4 overflow-hidden">
-                        <div className="h-full bg-[#FF4200] transition-all duration-1000" style={{ width: `${Math.round((globalStoryCount / (globalStoryCount + globalTaskCount || 1)) * 100)}%` }} />
-                    </div>
-                </div>
-
-                {/* 3. TICKETS & SUBS */}
-                <div className="bg-[#F8FAFC] dark:bg-slate-900 p-6 rounded-[32px] text-[#001540] dark:text-white flex flex-col justify-between border border-slate-100 dark:border-slate-800 shadow-lg shadow-slate-100/50 group">
-                    <div className="flex justify-between items-start mb-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tickets & Subs</p>
-                        <Zap size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 text-emerald-100">Finalizadas</p>
+                        <Zap size={16} className="text-white/40" />
                     </div>
                     <div>
-                        <h2 className="text-5xl font-black leading-none">{globalSubtaskCount}</h2>
+                        <h2 className="text-5xl font-black leading-none">{majorDone}</h2>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 mt-3 uppercase tracking-wider">Subtarefas Técnicas</p>
+                    <p className="text-[10px] font-bold text-emerald-100 mt-3 uppercase tracking-wider">Histórias Conc.</p>
+                </div>
+
+                {/* 2. EM ANDAMENTO */}
+                <div className="bg-amber-500 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-amber-200/50 group">
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 text-amber-100">Em Andamento</p>
+                        <TrendingUp size={16} className="text-white/40" />
+                    </div>
+                    <div>
+                        <h2 className="text-5xl font-black leading-none">{majorInProgress}</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-amber-100 mt-3 uppercase tracking-wider">Trabalho Ativo</p>
+                </div>
+
+                {/* 3. ABERTO (NOVOS) */}
+                <div className="bg-blue-500 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-blue-200/50 group">
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 text-blue-100">Aberto</p>
+                        <Target size={16} className="text-white/40" />
+                    </div>
+                    <div>
+                        <h2 className="text-5xl font-black leading-none">{majorToDo}</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-blue-100 mt-3 uppercase tracking-wider">Backlog Refinado</p>
+                </div>
+
+                {/* 4. CANCELADAS */}
+                <div className="bg-slate-400 p-6 rounded-[32px] text-white flex flex-col justify-between shadow-xl shadow-slate-200/50 group">
+                    <div className="flex justify-between items-start mb-4">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 text-slate-100">Canceladas</p>
+                        <ListTodo size={16} className="text-white/40" />
+                    </div>
+                    <div>
+                        <h2 className="text-5xl font-black leading-none">{majorCancelled}</h2>
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-100 mt-3 uppercase tracking-wider">Fora de Escopo</p>
                 </div>
 
                 {/* 4. ESFORÇO CONSUMIDO */}

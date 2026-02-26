@@ -82,6 +82,7 @@ export function StrategicDashboard() {
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [allVersions, setAllVersions] = useState<string[]>([])
     const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([])
+    const [selectedYear, setSelectedYear] = useState("AUTO")
     const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
     const [strategicObjectives, setStrategicObjectives] = useState<any[]>([])
     const [manualOkrs, setManualOkrs] = useState<any[]>([])
@@ -278,19 +279,26 @@ export function StrategicDashboard() {
             return stats
         }
 
-        const yearsToTry = [new Date().getFullYear(), 2025, 2024]
-        let bestYear = yearsToTry[0]
+        const currentYear = new Date().getFullYear()
+        const yearsToTry = [currentYear, 2025, 2024]
+
+        let bestYear = selectedYear === "AUTO" ? currentYear : parseInt(selectedYear)
         let maxCount = -1
         let bestStats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
 
-        for (const year of yearsToTry) {
-            const stats = getStatsForYear(year)
-            const total = Object.values(stats).reduce((a, b) => a + b, 0)
-            if (total > maxCount) {
-                maxCount = total
-                bestYear = year
-                bestStats = stats
+        if (selectedYear === "AUTO") {
+            for (const year of yearsToTry) {
+                const stats = getStatsForYear(year)
+                const total = Object.values(stats).reduce((a, b) => a + b, 0)
+                if (total > maxCount) {
+                    maxCount = total
+                    bestYear = year
+                    bestStats = stats
+                }
             }
+        } else {
+            bestYear = parseInt(selectedYear)
+            bestStats = getStatsForYear(bestYear)
         }
 
         setDisplayYear(bestYear)
@@ -381,6 +389,16 @@ export function StrategicDashboard() {
             <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold tracking-tight">Strategic Overview</h2>
                 <div className="flex items-center space-x-2">
+                    <select
+                        className="p-1.5 border rounded bg-background text-sm font-medium"
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(e.target.value)}
+                    >
+                        <option value="AUTO">Automatic Year</option>
+                        <option value="2026">2026</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                    </select>
                     <select
                         className="p-1.5 border rounded bg-background text-sm font-medium"
                         value={selectedVersion}
