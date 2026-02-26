@@ -856,19 +856,21 @@ export function EpicAnalysis() {
     const majorToDo = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "new").length
     const majorCancelled = majorIssuesFiltered.filter((i: any) => (i.fields?.status?.name || "").toLowerCase().includes("cancel")).length
 
-    // PROGRESS CALCULATION (Filtered)
+    // PROGRESS CALCULATION (Consistent with Jira's Overall Progress)
+    // Formula: (Total Done / Total Major Issues) - Includes Cancelled in total.
     const percentComplete = useMemo(() => {
-        // Option 1: Use Jira progress directly if available and NOT filtered
+        // If Jira provides a direct percentage and we're not filtering, use it
         if (selectedVersion === "ALL" && selectedQuarter === "ALL" &&
             data?.epic?.fields?.progress?.percent != null) {
             return Math.round(data.epic.fields.progress.percent);
         }
 
-        // Option 2: Calculate from filtered item count
-        return majorIssuesFiltered.length > 0
-            ? Math.round((majorDone / majorIssuesFiltered.length) * 100)
-            : 0;
-    }, [majorDone, majorIssuesFiltered.length, data?.epic?.fields?.progress?.percent, selectedVersion, selectedQuarter]);
+        // Otherwise, calculate based on total epic children (13/16 = 81% style)
+        // We use allMajorIssues to ensure we're counting the whole epic, not just the filtered view
+        const total = allMajorIssues.length;
+        const done = allMajorIssues.filter(i => i.fields.status.statusCategory.key === 'done').length;
+        return total > 0 ? Math.round((done / total) * 100) : 0;
+    }, [allMajorIssues, data?.epic?.fields?.progress?.percent, selectedVersion, selectedQuarter]);
 
 
     // SUBTASK METRICS (Secondary details)

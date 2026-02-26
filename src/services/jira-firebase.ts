@@ -111,35 +111,50 @@ export const callFetchMultipleEpics = async (
                 const epic = val.epic;
                 const children = val.children || [];
 
-                // 1. Calculate progress based on "Done" status category (Jira default)
-                // Formula: (Done Issues / Total Issues) * 100
-                // Total includes all major issues (Stories, Tasks, Bugs), including Cancelled ones.
-                const majorIssues = children.filter((child: any) => !child.fields?.issuetype?.subtask);
+                // 1. Calculate progress based on issue type
+                let progress = 0;
+                const issuetype = (epic.fields?.issuetype?.name || "").toLowerCase();
+                const isEpic = issuetype.includes('epic');
+
+                const majorIssues = children.filter((child: any) => {
+                    if (isEpic) {
+                        // For Epics: count Stories/Tasks/Bugs (non-subtasks)
+                        return !child.fields?.issuetype?.subtask;
+                    } else {
+                        // For Stories/Tasks: count their subtasks
+                        return child.fields?.issuetype?.subtask;
+                    }
+                });
+
                 const totalCount = majorIssues.length;
                 const doneCount = majorIssues.filter((child: any) =>
                     child.fields?.status?.statusCategory?.key === 'done'
                 ).length;
 
-                const progress = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-
-                // 2. DATA FIX: Recalculate aggregatetimespent from children
-                let trueTotalSeconds = 0;
-                children.forEach((child: any) => {
-                    let childTime = child.fields.aggregatetimespent;
-                    if (childTime === undefined || childTime === null) {
-                        childTime = child.fields.timespent || 0;
-                    }
-                    trueTotalSeconds += childTime;
-                });
-
-                if (children.length > 0) {
-                    if (!epic.fields) epic.fields = {};
-                    epic.fields.aggregatetimespent = trueTotalSeconds;
+                if (totalCount > 0) {
+                    progress = Math.round((doneCount / totalCount) * 100);
+                } else {
+                    // Fallback: use issue's own status category (100% if done, else 0%)
+                    progress = (epic.fields?.status?.statusCategory?.key === 'done') ? 100 : 0;
                 }
+
+                // 2. Calculate Total Spent Hours
+                // Sum issue's own time + children's aggregate time
+                let totalSpentSeconds = epic.fields?.aggregatetimespent || epic.fields?.timespent || 0;
+
+                // Ensure we capture children's effort if Epic aggregate time is missing or 0
+                if (children.length > 0 && totalSpentSeconds === 0) {
+                    children.forEach((child: any) => {
+                        totalSpentSeconds += (child.fields?.aggregatetimespent || child.fields?.timespent || 0);
+                    });
+                }
+
+                const totalHours = totalSpentSeconds / 3600;
 
                 return {
                     ...epic,
                     progress: progress,
+                    totalHours: totalHours,
                     children: children
                 };
             })

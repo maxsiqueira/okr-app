@@ -480,7 +480,7 @@ export function StrategicObjectives() {
                                                                     </button>
                                                                 </div>
                                                                 <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 border-l border-slate-200 dark:border-slate-700 pl-2 ml-1">{epicData[k]?.progress ?? '?'}%</span>
-                                                                <span className="text-[10px] font-bold text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 ml-1">{Math.round(epicData[k]?.hours || 0)}h</span>
+                                                                <span className="text-[10px] font-bold text-slate-400 border-l border-slate-200 dark:border-slate-700 pl-2 ml-1">{(epicData[k]?.hours || 0).toFixed(1)}h</span>
                                                             </div>
                                                         </div>
                                                     )) : (
