@@ -9,6 +9,10 @@ console.log("-----------------------------------------");
 console.log("   LOADING FUNCTIONS INDEX.JS - RESTORED");
 console.log("-----------------------------------------");
 
+// V2 REQUIREMENTS MOVED TO TOP
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { logger } = require("firebase-functions");
+
 admin.initializeApp();
 
 const app = express();
@@ -99,31 +103,45 @@ exports.updateUserPassword = functions.https.onCall(async (data, context) => {
 });
 
 // --- EMAIL SERVICE ---
-exports.sendEmail = functions.https.onCall(async (data, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Auth required');
-    const { to, subject, text, html } = data;
+// --- EMAIL SERVICE (v2) ---
+exports.sendEmail = onCall({ timeoutSeconds: 60, memory: '256MiB', cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Auth required');
+
+    const { to, subject, text, html } = request.data || {};
+    if (!to || !subject) throw new HttpsError('invalid-argument', 'Missing recipient or subject');
+
     try {
         const configDoc = await admin.firestore().collection('config').doc('smtp').get();
-        if (!configDoc.exists) throw new Error("SMTP config missing");
+        if (!configDoc.exists) throw new Error("SMTP config missing in Firestore (config/smtp)");
+
         const smtpConfig = configDoc.data();
         const transporter = nodemailer.createTransport({
-            host: smtpConfig.host, port: parseInt(smtpConfig.port),
-            secure: smtpConfig.port === '465',
-            auth: { user: smtpConfig.user, pass: smtpConfig.password },
+            host: smtpConfig.host,
+            port: parseInt(smtpConfig.port) || 587,
+            secure: smtpConfig.port === '465' || smtpConfig.port === 465,
+            auth: {
+                user: smtpConfig.user || smtpConfig.auth_user,
+                pass: smtpConfig.password || smtpConfig.auth_pass
+            },
+            tls: {
+                rejectUnauthorized: false // Often needed for custom SMTP servers
+            }
         });
+
         const info = await transporter.sendMail({
             from: `"${smtpConfig.fromName || 'Ion Dashboard'}" <${smtpConfig.fromEmail || smtpConfig.user}>`,
             to, subject, text, html,
         });
+
+        console.log(`[Email] Sent to ${to}: ${info.messageId}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        throw new functions.https.HttpsError('internal', error.message);
+        console.error('[Email] Failed:', error);
+        throw new HttpsError('internal', error.message);
     }
 });
 
 // ==================== JIRA SERVICES ====================
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { logger } = require("firebase-functions");
 
 exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: true }, async (request) => {
     const { epicKey, forceRefresh = false } = request.data || {};
@@ -199,7 +217,7 @@ exports.fetchEpicData = onCall({ timeoutSeconds: 300, memory: '512MiB', cors: tr
         const jql = `(parent = "${epicKey}" OR "Epic Link" = "${epicKey}") AND issuetype not in (Sub-task, Subtask, Subtarefa, "Sub-tarefa")`;
         let children = [];
         let startAt = 0;
-        let finalSearchUrl = `${jiraUrl}/rest/api/3/search/jql`;
+        let finalSearchUrl = `${jiraUrl}/rest/api/3/search`;
 
         while (true) {
             const body = {
@@ -295,7 +313,11 @@ exports.fetchStrategicObjectives = onCall({ timeoutSeconds: 300, memory: '512MiB
         }
 
         const sysDoc = await admin.firestore().collection('system_config').doc('jira').get();
-        const { url, email, token } = sysDoc.data();
+        const config = sysDoc.data() || {};
+        const url = config.url || config.jiraUrl;
+        const email = config.email || config.jiraEmail;
+        const token = config.token || config.jiraToken;
+
         if (!url || !email || !token) {
             throw new HttpsError('failed-precondition', 'Global Jira configuration is incomplete');
         }
@@ -307,7 +329,7 @@ exports.fetchStrategicObjectives = onCall({ timeoutSeconds: 300, memory: '512MiB
         const headers = { 'Authorization': `Basic ${authHeader}`, 'Accept': 'application/json', 'Content-Type': 'application/json' };
 
         const jql = `project = ${projectKey.replace(/[^a-zA-Z0-9-_]/g, '')} AND issuetype = Epic AND status != Done ORDER BY created DESC`;
-        const searchUrl = `${jiraUrl}/rest/api/3/search/jql`;
+        const searchUrl = `${jiraUrl}/rest/api/3/search`;
         const res = await fetchWithRetry(searchUrl, {
             method: 'POST', headers,
             body: JSON.stringify({ jql, fields: ["summary", "status", "description", "created", "updated", "fixVersions"], maxResults: 100 })
