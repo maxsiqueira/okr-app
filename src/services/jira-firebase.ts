@@ -127,26 +127,37 @@ export const callFetchMultipleEpics = async (
                 });
 
                 const totalCount = majorIssues.length;
-                const doneCount = majorIssues.filter((child: any) =>
-                    child.fields?.status?.statusCategory?.key === 'done'
-                ).length;
 
                 if (totalCount > 0) {
-                    progress = Math.round((doneCount / totalCount) * 100);
+                    // Weighted progress: Use the partial progress of each story/task
+                    // (which accounts for its subtasks) instead of just binary Done/Not Done
+                    const totalProgressSum = majorIssues.reduce((acc: number, child: any) => {
+                        const childProg = child.fields?.progress ?? (child.fields?.status?.statusCategory?.key === 'done' ? 100 : 0);
+                        return acc + childProg;
+                    }, 0);
+                    progress = Math.round(totalProgressSum / totalCount);
                 } else {
                     // Fallback: use issue's own status category (100% if done, else 0%)
                     progress = (epic.fields?.status?.statusCategory?.key === 'done') ? 100 : 0;
                 }
 
-                // 2. Calculate Total Spent Hours
-                // Sum issue's own time + children's aggregate time
-                let totalSpentSeconds = epic.fields?.aggregatetimespent || epic.fields?.timespent || 0;
+                // 2. Calculate Total Spent Hours (Effort)
+                // Use Jira's aggregate time rollup if available, otherwise manual sum
+                let totalSpentSeconds = epic.fields?.aggregatetimespent ?? 0;
 
-                // Ensure we capture children's effort if Epic aggregate time is missing or 0
-                if (children.length > 0 && totalSpentSeconds === 0) {
+                // If the epic itself has 0 aggregate time, it's likely not rolling up. 
+                // We sum children's effort as a fallback.
+                if (totalSpentSeconds === 0 && children.length > 0) {
                     children.forEach((child: any) => {
                         totalSpentSeconds += (child.fields?.aggregatetimespent || child.fields?.timespent || 0);
                     });
+                } else if (epic.fields?.timespent > 0 && totalSpentSeconds === epic.fields?.timespent) {
+                    // Alternative case: If aggregate == timespent but children exist, 
+                    // it also means rollup is not working in Jira. Check children effort.
+                    const childrenEffort = children.reduce((acc: number, c: any) => acc + (c.fields?.aggregatetimespent || c.fields?.timespent || 0), 0);
+                    if (childrenEffort > 0) {
+                        totalSpentSeconds += childrenEffort;
+                    }
                 }
 
                 const totalHours = totalSpentSeconds / 3600;

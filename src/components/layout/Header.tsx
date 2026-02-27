@@ -1,7 +1,6 @@
-import { Moon, Sun, Menu, LogOut, Search, Bell, Maximize, Languages } from "lucide-react"
+import { Moon, Sun, Menu, LogOut, Bell, Maximize, Languages } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -71,16 +70,6 @@ export function Header({ onToggleSidebar }: HeaderProps) {
                         </span>
                     </div>
 
-                    {/* Search Bar */}
-                    <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
-                        <div className="relative w-full">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                            <Input
-                                placeholder={t('common.search', "Search...")}
-                                className="pl-10 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                            />
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right side - Actions and User */}

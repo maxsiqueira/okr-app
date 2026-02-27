@@ -30,7 +30,7 @@ export default function Reports() {
             const objs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]
             setObjectives(objs)
 
-            // Fetch progress for all related epics
+            // Fetch progress and children for all related epics
             const allEpicKeys = Array.from(new Set(objs.flatMap(obj => obj.epicKeys || [])))
             if (allEpicKeys.length > 0) {
                 const progressMap: Record<string, any> = {}
@@ -38,7 +38,9 @@ export default function Reports() {
                 epics.forEach(epic => {
                     progressMap[epic.key] = {
                         progress: epic.progress || 0,
-                        hours: (epic as any).hours || 0
+                        hours: (epic as any).totalHours || (epic as any).hours || 0,
+                        children: (epic as any).children || [],
+                        summary: epic.fields?.summary || ""
                     }
                 })
                 setEpicData(progressMap)
@@ -187,7 +189,12 @@ export default function Reports() {
                                 <tr style="background-color: #f8fafc;">
                                     <td style="padding: 20px; border-radius: 16px 0 0 16px;">
                                         <div style="font-weight: 900; font-size: 13px; margin-bottom: 4px; text-transform: uppercase;">${obj.title}</div>
-                                        <div style="font-size: 11px; color: #94a3b8; font-weight: 500;">${obj.epicKeys?.length || 0} Iniciativas</div>
+                                        <div style="font-size: 11px; color: #94a3b8; font-weight: 500;">
+                                            ${obj.description?.substring(0, 100)}${obj.description?.length > 100 ? '...' : ''}
+                                        </div>
+                                        <div style="font-size: 10px; color: #475569; font-weight: 700; margin-top: 4px;">
+                                            ${obj.epicKeys?.length || 0} Iniciativas • Esforço: ${(obj.epicKeys || []).reduce((acc: number, key: string) => acc + (epicData[key]?.hours || 0), 0).toFixed(1)}h
+                                        </div>
                                     </td>
                                     <td style="padding: 20px; border-radius: 0 16px 16px 0; text-align: right;">
                                         <div style="font-size: 20px; font-weight: 900; color: ${actualProg >= 100 ? '#10B981' : '#001540'};">
@@ -401,6 +408,7 @@ export default function Reports() {
                     avgProgress={avgProgress}
                     onClose={() => setShowStrategicReport(false)}
                     onEmail={handleEmailReport}
+                    jiraUrl={user?.jiraUrl || ""}
                 />
             )}
 

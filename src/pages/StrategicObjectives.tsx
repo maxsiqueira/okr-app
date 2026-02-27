@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,6 +15,8 @@ import { db, auth } from "@/lib/firebase"
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc, addDoc, serverTimestamp } from "firebase/firestore"
 import { APP_VERSION, CURRENT_PATCH } from "@/constants/version";
 import { AiInsightsSection } from "@/components/analytics/AiInsightsSection"
+import { useAuth } from "@/contexts/AuthContext"
+import { EmailService } from "@/services/email"
 
 const logToFirestore = async (level: string, context: string, message: string, details: any = {}) => {
     try {
@@ -81,6 +83,10 @@ export function StrategicObjectives() {
     const [teams, setTeams] = useState<Team[]>([])
     const [showTeamManager, setShowTeamManager] = useState(false)
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
+    const { user } = useAuth()
+    const [sendingEmail, setSendingEmail] = useState(false)
+    const [emailModal, setEmailModal] = useState<{ open: boolean, reportType: 'strategic', defaultEmails: string }>({ open: false, reportType: 'strategic', defaultEmails: '' })
+    const [recipients, setRecipients] = useState("")
 
     useEffect(() => {
         // Firestore Real-time sync for Objectives
@@ -129,7 +135,7 @@ export function StrategicObjectives() {
         };
     }, [])
 
-    const fetchEpicProgress = async (currentObjectives: StrategicObjective[]) => {
+    const fetchEpicProgress = async (currentObjectives: StrategicObjective[], forceRefresh = false) => {
         setLoading(true)
         try {
             // 1. Try Firestore shared cache first (2 min TTL)
@@ -140,8 +146,8 @@ export function StrategicObjectives() {
                 const cached = cachedDoc.data();
                 const age = Date.now() - cached.timestamp;
 
-                // Use if less than 24 hours old (Persistence Strategy)
-                if (age < 24 * 60 * 60 * 1000) {
+                // Use if less than 5 minutes old (Real-time synchronization strategy)
+                if (age < 5 * 60 * 1000 && !forceRefresh) {
                     console.log("[Epic Progress] Using Firestore cache (age:", Math.round(age / 1000), "s)");
                     setEpicData(cached.data);
                     setRawJiraEpics(cached.rawEpics || []);
@@ -157,16 +163,16 @@ export function StrategicObjectives() {
                 return
             }
 
-            const epics = await JiraService.getEpicsByKeys(allKeys)
+            const epics = await JiraService.getEpicsByKeys(allKeys, "ALL", forceRefresh)
             setRawJiraEpics(epics)
 
             const progressMap: Record<string, { progress: number, hours: number, summary?: string, status?: string }> = {}
             epics.forEach((e: any) => {
                 progressMap[e.key] = {
                     progress: e.progress || 0,
-                    hours: e.totalHours || 0,
-                    summary: e.fields.summary,
-                    status: e.fields.status.name
+                    hours: e.totalHours || e.hours || 0,
+                    summary: e.fields?.summary || "",
+                    status: e.fields?.status?.name || ""
                 }
             })
 
@@ -318,6 +324,124 @@ export function StrategicObjectives() {
         if (url) window.open(`${url}/browse/${key}`, '_blank')
     }
 
+    const handleEmailReport = async () => {
+        if (!user?.email) {
+            alert("Erro: E-mail do usuário não encontrado.")
+            return
+        }
+        setEmailModal({ open: true, reportType: 'strategic', defaultEmails: user.email })
+        setRecipients(user.email)
+    }
+
+    const executeSendStrategicEmail = async (targetEmails: string) => {
+        console.log("[StrategicObjectives] Triggering Strategic Email Report to:", targetEmails)
+
+        // Ensure auth token is fresh to avoid "User must be authenticated" errors
+        try {
+            const { auth } = await import("@/lib/firebase");
+            if (auth.currentUser) {
+                await auth.currentUser.getIdToken(true);
+            }
+        } catch (e) {
+            console.warn("Auth token refresh failed, proceeding anyway:", e);
+        }
+
+        setSendingEmail(true)
+        try {
+            const today = new Date().toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            });
+
+            // Generate high-fidelity HTML template
+            const emailHtml = `
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f9; padding: 40px 20px; color: #001540;">
+                <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <div style="background-color: #001540; padding: 40px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase;">
+                            Apuração <span style="color: #FF4200;">Estratégica</span>
+                        </h1>
+                        <p style="color: rgba(255,255,255,0.6); margin-top: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">
+                            Intelligence & Analytics • ${today}
+                        </p>
+                    </div>
+
+                    <!-- Summary KPI -->
+                    <div style="padding: 40px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+                        <p style="margin: 0; font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em;">
+                            Percentual Médio Apurado
+                        </p>
+                        <div style="font-size: 72px; font-weight: 900; color: #FF4200; line-height: 1; margin: 10px 0;">
+                            ${avgProgress}%
+                        </div>
+                        <div style="display: inline-block; padding: 6px 16px; background-color: #f1f5f9; border-radius: 100px; font-size: 10px; font-weight: 900; color: #64748b;">
+                            ${objectives.length} OBJETIVOS ANALISADOS
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div style="padding: 20px;">
+                        <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                            ${objectives.map(obj => {
+                const totalProg = getObjectiveProgress(obj)
+                const isManual = obj.suggestedProgress != null
+                const totalHours = obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.hours || 0), 0)
+
+                return `
+                                <tr style="background-color: #f8fafc;">
+                                    <td style="padding: 20px; border-radius: 16px 0 0 16px;">
+                                        <div style="font-weight: 900; font-size: 13px; margin-bottom: 4px; text-transform: uppercase;">${obj.title}</div>
+                                        <div style="font-size: 11px; color: #94a3b8; font-weight: 500;">
+                                            ${obj.description?.substring(0, 100)}${obj.description?.length > 100 ? '...' : ''}
+                                        </div>
+                                        <div style="font-size: 10px; color: #475569; font-weight: 700; margin-top: 4px;">
+                                            ${obj.epicKeys?.length || 0} Iniciativas • Esforço: ${totalHours.toFixed(1)}h
+                                        </div>
+                                    </td>
+                                    <td style="padding: 20px; border-radius: 0 16px 16px 0; text-align: right;">
+                                        <div style="font-size: 20px; font-weight: 900; color: ${totalProg >= 100 ? '#10B981' : '#001540'};">
+                                            ${totalProg}%
+                                        </div>
+                                        ${isManual ? '<span style="font-size: 8px; font-weight: 900; background: #001540; color: white; padding: 2px 6px; border-radius: 4px;">MANUAL</span>' : ''}
+                                    </td>
+                                </tr>
+                                `
+            }).join('')}
+                        </table>
+                    </div>
+
+                    <!-- Footer -->
+                    <div style="padding: 40px; background-color: #f8fafc; text-align: center;">
+                        <p style="margin: 0; font-size: 10px; font-weight: 700; color: #cbd5e1; letter-spacing: 0.3em; text-transform: uppercase;">
+                            ION SISTEMAS • STRATEGY 2025
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+
+            await EmailService.sendEmail({
+                to: targetEmails,
+                subject: `Relatório Estratégico ION - ${today}`,
+                text: `Relatório de Performance: ${avgProgress}% de progresso médio nos ${objectives.length} objetivos.`,
+                html: emailHtml
+            });
+
+            alert(`Sucesso! O relatório foi enviado para: ${targetEmails}`)
+            setEmailModal({ ...emailModal, open: false })
+        } catch (error: any) {
+            console.error("Failed to send email:", error)
+            alert(`Falha no envio: ${error.message || 'Erro desconhecido'}`)
+        } finally {
+            setSendingEmail(false)
+        }
+    }
+
     return (
         <div className="space-y-6 p-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -339,7 +463,7 @@ export function StrategicObjectives() {
                         <Printer className="h-4 w-4" />
                         Relatório
                     </Button>
-                    <Button variant="outline" onClick={() => fetchEpicProgress(objectives)} disabled={loading} className="gap-2 font-bold uppercase tracking-wider text-xs border-slate-200 shadow-sm hover:bg-slate-50">
+                    <Button variant="outline" onClick={() => fetchEpicProgress(objectives, true)} disabled={loading} className="gap-2 font-bold uppercase tracking-wider text-xs border-slate-200 shadow-sm hover:bg-slate-50">
                         <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                         Sincronizar Jira
                     </Button>
@@ -370,6 +494,8 @@ export function StrategicObjectives() {
                         epicData={epicData}
                         avgProgress={avgProgress}
                         onClose={() => setShowReport(false)}
+                        onEmail={handleEmailReport}
+                        jiraUrl={user?.jiraUrl || ""}
                     />
                 )
             }
@@ -715,6 +841,46 @@ export function StrategicObjectives() {
                     </div>
                 )
             }
+            {/* Email Modal */}
+            {emailModal.open && (
+                <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+                    <Card className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden border-none shadow-2xl">
+                        <CardHeader className="bg-[#001540] text-white p-8">
+                            <CardTitle className="text-xl font-black uppercase tracking-tight">Destinatários</CardTitle>
+                            <CardDescription className="text-blue-200">Informe os e-mails para envio (separados por vírgula).</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lista de E-mails</label>
+                                <textarea
+                                    className="w-full h-32 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
+                                    placeholder="email1@empresa.com, email2@empresa.com"
+                                    value={recipients}
+                                    onChange={(e) => setRecipients(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setEmailModal({ ...emailModal, open: false })}
+                                    className="flex-1 border-slate-200 font-bold uppercase rounded-2xl h-12"
+                                >
+                                    CANCELAR
+                                </Button>
+                                <Button
+                                    className="flex-1 bg-[#FF4200] hover:bg-[#FF4200]/90 text-white font-black uppercase rounded-2xl h-12"
+                                    disabled={sendingEmail}
+                                    onClick={() => {
+                                        executeSendStrategicEmail(recipients)
+                                    }}
+                                >
+                                    {sendingEmail ? 'ENVIANDO...' : 'ENVIAR AGORA'}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
         </div >
     )
 }

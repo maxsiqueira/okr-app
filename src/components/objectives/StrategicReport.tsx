@@ -11,9 +11,10 @@ interface StrategicReportProps {
     avgProgress: number;
     onClose: () => void;
     onEmail?: () => void;
+    jiraUrl?: string;
 }
 
-export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, epicData, avgProgress, onClose, onEmail }) => {
+export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, epicData, avgProgress, onClose, onEmail, jiraUrl }) => {
     const today = new Date().toLocaleDateString('pt-BR', {
         day: '2-digit',
         month: 'long',
@@ -110,6 +111,7 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                                 <TableRow className="hover:bg-transparent border-none">
                                     <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest pl-8">OBJETIVO ESTRATÉGICO</TableHead>
                                     <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest text-center">INICIATIVAS</TableHead>
+                                    <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest text-center">ESFORÇO (HORAS)</TableHead>
                                     <TableHead className="py-5 font-black text-white/60 uppercase text-[10px] tracking-widest">PROGRESSO</TableHead>
                                     <TableHead className="py-5 text-right font-black text-white/60 uppercase text-[10px] tracking-widest pr-8">STATUS</TableHead>
                                 </TableRow>
@@ -127,12 +129,42 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                                                 <div className="flex flex-col gap-1">
                                                     <p className="font-black text-[#001540] dark:text-white text-lg leading-tight uppercase">{obj.title}</p>
                                                     <p className="text-sm text-slate-400 font-medium leading-relaxed max-w-md">{obj.description}</p>
+
+                                                    {/* Tickets / Stories Section */}
+                                                    <div className="flex flex-wrap gap-1.5 mt-3 max-w-xl">
+                                                        {obj.epicKeys.flatMap(key => {
+                                                            const epicInfo = epicData[key];
+                                                            if (!epicInfo || !epicInfo.children) return [];
+                                                            return epicInfo.children.map((child: any) => ({
+                                                                key: child.key,
+                                                                summary: child.fields.summary,
+                                                                status: child.fields.status?.name,
+                                                                statusColor: child.fields.status?.statusCategory?.key === 'done' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-100'
+                                                            }));
+                                                        }).sort((a: any, b: any) => a.key.localeCompare(b.key)).map((ticket: any) => (
+                                                            <a
+                                                                key={ticket.key}
+                                                                href={jiraUrl ? `https://${jiraUrl.replace('https://', '').replace(/\/$/, '')}/browse/${ticket.key}` : '#'}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className={`inline-flex items-center px-2 py-0.5 rounded text-[8px] font-bold transition-all hover:scale-105 active:scale-95 border ${ticket.statusColor} print:border-slate-200 print:text-black`}
+                                                                title={ticket.summary}
+                                                            >
+                                                                {ticket.key}
+                                                            </a>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-center py-8 align-top">
                                                 <Badge className="bg-[#F0F4F8] text-[#4A5568] border-none font-bold text-[10px] px-3 py-1 rounded-full uppercase">
                                                     {obj.epicKeys.length} PROJETOS
                                                 </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-center py-8 align-top">
+                                                <span className="text-xl font-black text-[#001540] dark:text-slate-300">
+                                                    {obj.epicKeys.reduce((acc, key) => acc + (epicData[key]?.hours || 0), 0).toFixed(1)}h
+                                                </span>
                                             </TableCell>
                                             <TableCell className="py-8 align-top">
                                                 <div className="flex items-center gap-3 mb-2">
@@ -149,10 +181,10 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                                             </TableCell>
                                             <TableCell className="text-right py-8 pr-8 align-top">
                                                 <Badge className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border-none ${totalProg >= 100
-                                                        ? 'bg-[#E6FFFA] text-[#2D3748]'
-                                                        : totalProg > 0
-                                                            ? 'bg-[#FFFAF0] text-[#FF4200]'
-                                                            : 'bg-slate-100 text-slate-400'
+                                                    ? 'bg-[#E6FFFA] text-[#2D3748]'
+                                                    : totalProg > 0
+                                                        ? 'bg-[#FFFAF0] text-[#FF4200]'
+                                                        : 'bg-slate-100 text-slate-400'
                                                     }`}>
                                                     {totalProg >= 100 ? 'CONCLUÍDO' : totalProg > 0 ? 'EM ANDAMENTO' : 'PENDENTE'}
                                                 </Badge>
