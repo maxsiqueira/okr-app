@@ -163,12 +163,18 @@ export const JiraService = {
     // Stub: getBulkEpicDetails - now used by ExtraEpicAnalysis
     // Stub: getBulkEpicDetails - now used by ExtraEpicAnalysis
     getBulkEpicDetails: async (epicKeys: string[]): Promise<{ epic: JiraIssue, children: JiraIssue[] }[]> => {
-        // EMERGENCY FIX: Throttle this too, even if less used
         const results: PromiseSettledResult<any>[] = [];
-        for (const key of epicKeys) {
-            results.push(await Promise.allSettled([JiraService.getEpicDetails(key)]).then(r => r[0]));
-            // Small delay
-            await new Promise(r => setTimeout(r, 500));
+        const BATCH_SIZE = 5;
+
+        for (let i = 0; i < epicKeys.length; i += BATCH_SIZE) {
+            const batch = epicKeys.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(key => JiraService.getEpicDetails(key));
+            const batchResults = await Promise.allSettled(batchPromises);
+            results.push(...batchResults);
+
+            if (i + BATCH_SIZE < epicKeys.length) {
+                await new Promise(r => setTimeout(r, 100));
+            }
         }
 
         return results

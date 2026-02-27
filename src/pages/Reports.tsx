@@ -21,6 +21,8 @@ export default function Reports() {
     const [showExecutiveReport, setShowExecutiveReport] = useState(false)
     const { user } = useAuth()
     const [sendingEmail, setSendingEmail] = useState(false)
+    const [emailModal, setEmailModal] = useState<{ open: boolean, reportType: 'strategic' | 'executive', defaultEmails: string }>({ open: false, reportType: 'strategic', defaultEmails: '' })
+    const [recipients, setRecipients] = useState("")
 
     useEffect(() => {
         const q = query(collection(db, "strategic_objectives"))
@@ -114,13 +116,26 @@ export default function Reports() {
         }, 0) / objectivesForCalc.length)
         : 0
     const handleEmailReport = async () => {
-        console.log("[Reports] Triggering Strategic Email Report...")
         if (!user?.email) {
             alert("Erro: E-mail do usuário não encontrado.")
             return
         }
+        setEmailModal({ open: true, reportType: 'strategic', defaultEmails: user.email })
+        setRecipients(user.email)
+    }
 
-        if (!confirm(`Deseja enviar o relatório para ${user.email}?`)) return
+    const executeSendStrategicEmail = async (targetEmails: string) => {
+        console.log("[Reports] Triggering Strategic Email Report to:", targetEmails)
+
+        // Ensure auth token is fresh to avoid "User must be authenticated" errors
+        try {
+            const { auth } = await import("@/lib/firebase");
+            if (auth.currentUser) {
+                await auth.currentUser.getIdToken(true);
+            }
+        } catch (e) {
+            console.warn("Auth token refresh failed, proceeding anyway:", e);
+        }
 
         setSendingEmail(true)
         try {
@@ -198,13 +213,14 @@ export default function Reports() {
             `;
 
             await EmailService.sendEmail({
-                to: user.email,
+                to: targetEmails,
                 subject: `Relatório Estratégico ION - ${today}`,
                 text: `Relatório de Performance: ${avgProgress}% de progresso médio nos ${objectives.length} objetivos.`,
                 html: emailHtml
             });
 
-            alert("Sucesso! O relatório foi enviado para o seu e-mail.")
+            alert(`Sucesso! O relatório foi enviado para: ${targetEmails}`)
+            setEmailModal({ ...emailModal, open: false })
         } catch (error: any) {
             console.error("Failed to send email:", error)
             alert(`Falha no envio: ${error.message || 'Erro desconhecido'}`)
@@ -214,13 +230,26 @@ export default function Reports() {
     }
 
     const handleEmailExecutiveReport = async () => {
-        console.log("[Reports] Triggering Executive Snapshot Email...")
         if (!user?.email || !dashboardData) {
             alert("Erro: Dados não disponíveis.")
             return
         }
+        setEmailModal({ open: true, reportType: 'executive', defaultEmails: user.email })
+        setRecipients(user.email)
+    }
 
-        if (!confirm(`Deseja enviar o resumo executivo para ${user.email}?`)) return
+    const executeSendExecutiveEmail = async (targetEmails: string) => {
+        console.log("[Reports] Triggering Executive Snapshot Email to:", targetEmails)
+
+        // Ensure auth token is fresh
+        try {
+            const { auth } = await import("@/lib/firebase");
+            if (auth.currentUser) {
+                await auth.currentUser.getIdToken(true);
+            }
+        } catch (e) {
+            console.warn("Auth token refresh failed, proceeding anyway:", e);
+        }
 
         setSendingEmail(true)
         try {
@@ -269,13 +298,14 @@ export default function Reports() {
             `;
 
             await EmailService.sendEmail({
-                to: user.email,
+                to: targetEmails,
                 subject: `Snapshot Executivo ION - ${today}`,
                 text: `Alcanço de Performance: ${dashboardData.avgProgress}% médio em ${dashboardData.totalInitiatives} iniciativas.`,
                 html: emailHtml
             });
 
-            alert("Sucesso! O resumo executivo foi enviado.")
+            alert(`Sucesso! O resumo executivo foi enviado para: ${targetEmails}`)
+            setEmailModal({ ...emailModal, open: false })
         } catch (error: any) {
             alert(`Falha no envio: ${error.message}`)
         } finally {
@@ -394,6 +424,48 @@ export default function Reports() {
                     </p>
                 </div>
             </div>
+
+            {/* Email Modal */}
+            {emailModal.open && (
+                <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+                    <Card className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden border-none shadow-2xl">
+                        <CardHeader className="bg-[#001540] text-white p-8">
+                            <CardTitle className="text-xl font-black uppercase tracking-tight">Destinatários</CardTitle>
+                            <CardDescription className="text-blue-200">Informe os e-mails para envio (separados por vírgula).</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lista de E-mails</label>
+                                <textarea
+                                    className="w-full h-32 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
+                                    placeholder="email1@empresa.com, email2@empresa.com"
+                                    value={recipients}
+                                    onChange={(e) => setRecipients(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 h-12 rounded-xl font-bold uppercase text-[10px] tracking-widest border-slate-200"
+                                    onClick={() => setEmailModal({ ...emailModal, open: false })}
+                                >
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    className="flex-1 h-12 rounded-xl font-black bg-[#FF4200] hover:bg-[#E63B00] text-white uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/20"
+                                    disabled={sendingEmail}
+                                    onClick={() => {
+                                        if (emailModal.reportType === 'strategic') executeSendStrategicEmail(recipients);
+                                        else executeSendExecutiveEmail(recipients);
+                                    }}
+                                >
+                                    {sendingEmail ? 'ENVIANDO...' : 'ENVIAR AGORA'}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
         </div>
     )
 }

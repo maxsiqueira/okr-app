@@ -84,8 +84,8 @@ export const callFetchMultipleEpics = async (
 
     try {
         // Call fetchEpicData for each epic (throttled in batches)
-        // EMERGNCY FIX: Reduced to 1 to strictly avoid rate limits (Step 1012)
-        const CHUNK_SIZE = 1;
+        // Optimized for performance with 10 parallel requests
+        const CHUNK_SIZE = 10;
         const results: PromiseSettledResult<any>[] = [];
 
         for (let i = 0; i < validKeys.length; i += CHUNK_SIZE) {
@@ -96,9 +96,9 @@ export const callFetchMultipleEpics = async (
             const chunkResults = await Promise.allSettled(promises);
             results.push(...chunkResults);
 
-            // Add delay between batches to respect rate limits
+            // Add small delay between batches
             if (i + CHUNK_SIZE < validKeys.length) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
 

@@ -184,7 +184,7 @@ const HorizontalTubularBar = (props: any) => {
 };
 
 export function EpicAnalysis() {
-    const { t } = useTranslation()
+    const { /* t */ } = useTranslation()
     const { user } = useAuth()
     const { settings, updateEpicAnalysisSettings } = useSettings()
     const [searchParams, setSearchParams] = useSearchParams()
@@ -221,6 +221,21 @@ export function EpicAnalysis() {
         if (!data || !data.children) return [];
         return data.children.filter((c: any) => !c.fields?.issuetype?.subtask)
     }, [data]);
+
+    // PROGRESS CALCULATION (Consistent with Jira's Overall Progress)
+    // Formula: (Total Done / Total Major Issues) - Includes Cancelled in total.
+    const percentComplete = useMemo(() => {
+        // If Jira provides a direct percentage and we're not filtering, use it
+        if (selectedVersion === "ALL" && selectedQuarter === "ALL" &&
+            data?.epic?.fields?.progress?.percent != null) {
+            return Math.round(data.epic.fields.progress.percent);
+        }
+
+        // Otherwise, calculate based on total epic children (13/16 = 81% style)
+        const total = allMajorIssues.length;
+        const done = allMajorIssues.filter(i => i.fields?.status?.statusCategory?.key === 'done').length;
+        return total > 0 ? Math.round((done / total) * 100) : 0;
+    }, [allMajorIssues, data?.epic?.fields?.progress?.percent, selectedVersion, selectedQuarter]);
 
     // Define handlers early so they are in scope for early returns (Error/Empty states)
     const handleEmailAnalysis = async () => {
@@ -382,14 +397,30 @@ export function EpicAnalysis() {
     // Extra Epics transformation
     useEffect(() => {
         if (extraEpicsQueryResult) {
-            const transformed = extraEpicsQueryResult.map(({ epic }) => ({
-                id: epic.id,
-                key: epic.key,
-                summary: epic.fields.summary,
-                status: epic.fields.status.name,
-                progress: calculateTransformedProgress(epic),
-                hoursSpent: Math.round((epic.fields.aggregatetimespent || epic.fields.timespent || 0) / 36) / 100
-            }))
+            const transformed = extraEpicsQueryResult.map(({ epic, children }) => {
+                // Sum children's time for a more accurate total
+                let totalSeconds = epic.fields?.aggregatetimespent || epic.fields?.timespent || 0;
+
+                if (children && children.length > 0) {
+                    const childrenSeconds = children.reduce((acc: number, child: any) => {
+                        return acc + (child.fields?.aggregatetimespent || child.fields?.timespent || 0);
+                    }, 0);
+
+                    // If children have more time than the epic's own aggregate (which can happen), use children's sum
+                    if (childrenSeconds > totalSeconds) {
+                        totalSeconds = childrenSeconds;
+                    }
+                }
+
+                return {
+                    id: epic.id,
+                    key: epic.key,
+                    summary: epic.fields?.summary || "",
+                    status: epic.fields?.status?.name || "",
+                    progress: calculateTransformedProgress(epic),
+                    hoursSpent: Math.round(totalSeconds / 3600)
+                }
+            })
             setExtraEpicsData(transformed)
         }
     }, [extraEpicsQueryResult])
@@ -737,8 +768,8 @@ export function EpicAnalysis() {
         const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
         // Changed to use children (tickets) only, per user request: "baseados em tickets"
         children.forEach((issue: any) => {
-            const isDone = issue.fields.status.statusCategory.key === 'done' || (issue.fields.status.name || "").toLowerCase().includes("finalizado")
-            const dStr = issue.fields.resolutiondate || issue.fields.updated
+            const isDone = issue.fields?.status?.statusCategory?.key === 'done' || (issue.fields?.status?.name || "").toLowerCase().includes("finalizado")
+            const dStr = issue.fields?.resolutiondate || issue.fields?.updated
             if (isDone && dStr) {
                 const d = new Date(dStr)
                 if (d.getFullYear() === year) {
@@ -795,7 +826,7 @@ export function EpicAnalysis() {
         Q3: [] as JiraIssue[],
         Q4: [] as JiraIssue[]
     }
-    allAtoms.filter((i: any) => !i.fields.issuetype.subtask && i.fields.status.statusCategory.key === 'done').forEach((issue: any) => {
+    allAtoms.filter((i: any) => !i.fields?.issuetype?.subtask && i.fields?.status?.statusCategory?.key === 'done').forEach((issue: any) => {
         const dStr = issue.fields.resolutiondate || issue.fields.updated
         if (dStr) {
             const d = new Date(dStr)
@@ -811,8 +842,8 @@ export function EpicAnalysis() {
 
     // 2. Filter Logic for UI: Deep include parents if subtasks match
     const filteredChildren = children.filter((child: any) => {
-        const versionMatch = selectedVersion === "ALL" || (child.fields.fixVersions?.some((v: any) => v.name === selectedVersion))
-            || (selectedVersion === "Unscheduled" && (!child.fields.fixVersions || child.fields.fixVersions.length === 0))
+        const versionMatch = selectedVersion === "ALL" || (child.fields?.fixVersions?.some((v: any) => v.name === selectedVersion))
+            || (selectedVersion === "Unscheduled" && (!child.fields?.fixVersions || child.fields.fixVersions.length === 0))
 
         if (!versionMatch) return false
         if (selectedQuarter === "ALL") return true
@@ -830,10 +861,10 @@ export function EpicAnalysis() {
         qEnd.setHours(23, 59, 59, 999)
 
         const checkIssueMatches = (iss: JiraIssue) => {
-            const dStr = iss.fields.resolutiondate || iss.fields.updated
+            const dStr = iss.fields?.resolutiondate || iss.fields?.updated
             if (!dStr) return false
             const d = new Date(dStr)
-            return d >= qStart && d <= qEnd && iss.fields.status.statusCategory.key === 'done'
+            return d >= qStart && d <= qEnd && iss.fields?.status?.statusCategory?.key === 'done'
         }
 
         const selfMatches = checkIssueMatches(child)
@@ -851,26 +882,14 @@ export function EpicAnalysis() {
     const majorIssuesFiltered = allFilteredIssues.filter((i: any) => !i.fields.issuetype.subtask)
 
     // MAJOR METRICS (Lead for KPIs and Charts - Reacts to filters)
-    const majorDone = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "done").length
-    const majorInProgress = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "indeterminate").length
-    const majorToDo = majorIssuesFiltered.filter((i: any) => i.fields.status.statusCategory.key === "new").length
+    const majorDone = majorIssuesFiltered.filter((i: any) => i.fields?.status?.statusCategory?.key === "done").length
+    const majorInProgress = majorIssuesFiltered.filter((i: any) => i.fields?.status?.statusCategory?.key === "indeterminate").length
+    const majorToDo = majorIssuesFiltered.filter((i: any) => i.fields?.status?.statusCategory?.key === "new").length
     const majorCancelled = majorIssuesFiltered.filter((i: any) => (i.fields?.status?.name || "").toLowerCase().includes("cancel")).length
 
     // PROGRESS CALCULATION (Consistent with Jira's Overall Progress)
     // Formula: (Total Done / Total Major Issues) - Includes Cancelled in total.
-    const percentComplete = useMemo(() => {
-        // If Jira provides a direct percentage and we're not filtering, use it
-        if (selectedVersion === "ALL" && selectedQuarter === "ALL" &&
-            data?.epic?.fields?.progress?.percent != null) {
-            return Math.round(data.epic.fields.progress.percent);
-        }
-
-        // Otherwise, calculate based on total epic children (13/16 = 81% style)
-        // We use allMajorIssues to ensure we're counting the whole epic, not just the filtered view
-        const total = allMajorIssues.length;
-        const done = allMajorIssues.filter(i => i.fields.status.statusCategory.key === 'done').length;
-        return total > 0 ? Math.round((done / total) * 100) : 0;
-    }, [allMajorIssues, data?.epic?.fields?.progress?.percent, selectedVersion, selectedQuarter]);
+    // progress calculation moved to top
 
 
     // SUBTASK METRICS (Secondary details)

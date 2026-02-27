@@ -33,7 +33,8 @@ export function ExtraEpicAnalysis() {
     const [extraKeys, setExtraKeys] = useState<string[]>([])
     const [allData, setAllData] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
-    const [displayYear] = useState(new Date().getFullYear())
+    const [selectedYear, setSelectedYear] = useState("AUTO")
+    const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const { user } = useAuth()
 
@@ -118,6 +119,14 @@ export function ExtraEpicAnalysis() {
     }, 0)
     const globalProgress = totalItems > 0 ? Math.round((totalDone / totalItems) * 100) : 0
 
+    const totalHours = allData.reduce((acc, res) => {
+        const epicHours = (res.epic.fields?.aggregatetimespent || res.epic.fields?.timespent || 0) / 3600;
+        const childrenHours = res.children.reduce((cAcc: number, c: any) => {
+            return cAcc + ((c.fields?.aggregatetimespent || c.fields?.timespent || 0) / 3600);
+        }, 0);
+        return acc + Math.max(epicHours, childrenHours);
+    }, 0);
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -126,13 +135,34 @@ export function ExtraEpicAnalysis() {
                         <Layers className="h-6 w-6 text-indigo-600" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-bold tracking-tight">Extra Epics Analysis</h2>
+                        <h2 className="text-3xl font-bold tracking-tight uppercase">Extra Epics Analysis</h2>
                         <p className="text-muted-foreground">Consolidado de iniciativas complementares</p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <span className="text-xs font-bold text-muted-foreground uppercase block">Progresso Médio</span>
-                    <span className="text-3xl font-black text-indigo-600">{globalProgress}%</span>
+                <div className="flex gap-10 items-center">
+                    <div className="text-right">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">Esforço Total</span>
+                        <span className="text-3xl font-black text-emerald-600">{Math.round(totalHours)}h</span>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase block">Progresso Médio</span>
+                        <span className="text-3xl font-black text-indigo-600">{globalProgress}%</span>
+                    </div>
+                    <div className="bg-white p-1 rounded-xl shadow-sm border flex items-center gap-2">
+                        <select
+                            className="text-[11px] font-black uppercase px-3 py-2 outline-none bg-transparent"
+                            value={selectedYear}
+                            onChange={(e) => {
+                                setSelectedYear(e.target.value);
+                                if (e.target.value !== "AUTO") setDisplayYear(parseInt(e.target.value));
+                            }}
+                        >
+                            <option value="AUTO">ANO: AUTO</option>
+                            <option value="2026">ANO: 2026</option>
+                            <option value="2025">ANO: 2025</option>
+                            <option value="2024">ANO: 2024</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 

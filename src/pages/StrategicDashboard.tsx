@@ -81,7 +81,12 @@ export function StrategicDashboard() {
     const [projectKey, setProjectKey] = useState("")
     const [selectedVersion, setSelectedVersion] = useState("ALL")
     const [allVersions, setAllVersions] = useState<string[]>([])
-    const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([])
+    const [quarterlyData, setQuarterlyData] = useState<{ quarter: string, count: number, color: string }[]>([
+        { quarter: 'Q1', count: 0, color: '#3B82F6' },
+        { quarter: 'Q2', count: 0, color: '#10B981' },
+        { quarter: 'Q3', count: 0, color: '#F59E0B' },
+        { quarter: 'Q4', count: 0, color: '#8B5CF6' },
+    ])
     const [selectedYear, setSelectedYear] = useState("AUTO")
     const [displayYear, setDisplayYear] = useState(new Date().getFullYear())
     const [strategicObjectives, setStrategicObjectives] = useState<any[]>([])
@@ -209,8 +214,8 @@ export function StrategicDashboard() {
             })
             setAllVersions(Array.from(versions).sort())
 
-            if (epicQueryResult.fetchedOkr.length > 0) {
-                calculateQuarterlyMetrics(epicQueryResult.fetchedOkr)
+            if (epicQueryResult.fetchedAll.length > 0) {
+                calculateQuarterlyMetrics(epicQueryResult.fetchedAll)
             }
         }
     }, [epicQueryResult])
@@ -246,10 +251,17 @@ export function StrategicDashboard() {
         const getStatsForYear = (year: number) => {
             const stats = { Q1: 0, Q2: 0, Q3: 0, Q4: 0 }
             allDetails.forEach(details => {
-                if (!details) return
+                if (!details || !details.children) return
                 details.children.forEach(child => {
-                    const dStr = child.fields.resolutiondate || child.fields.updated
-                    if (child.fields.status.statusCategory.key === 'done' && dStr) {
+                    // Check if it's done (using same logic as EpicAnalysis for consistency)
+                    const isDone = child.fields?.status?.statusCategory?.key === 'done' ||
+                        (child.fields?.status?.name || "").toLowerCase().includes("finalizado") ||
+                        (child.fields?.status?.name || "").toLowerCase().includes("concluído")
+
+                    // Prioritize resolutiondate, fallback to updated
+                    const dStr = child.fields?.resolutiondate || child.fields?.updated
+
+                    if (isDone && dStr) {
                         const resolutionDate = new Date(dStr)
                         if (resolutionDate.getFullYear() === year) {
                             const month = resolutionDate.getMonth()
@@ -259,28 +271,14 @@ export function StrategicDashboard() {
                             else stats.Q4++
                         }
                     }
-                    if (child.subtasks) {
-                        child.subtasks.forEach(sub => {
-                            const sdStr = sub.fields.resolutiondate || sub.fields.updated
-                            if (sub.fields.status.statusCategory.key === 'done' && sdStr) {
-                                const resolutionDate = new Date(sdStr)
-                                if (resolutionDate.getFullYear() === year) {
-                                    const month = resolutionDate.getMonth()
-                                    if (month <= 2) stats.Q1++
-                                    else if (month <= 5) stats.Q2++
-                                    else if (month <= 8) stats.Q3++
-                                    else stats.Q4++
-                                }
-                            }
-                        })
-                    }
+                    // REMOVED subtasks counting to avoid double counting and align with "ticket-based" metrics
                 })
             })
             return stats
         }
 
         const currentYear = new Date().getFullYear()
-        const yearsToTry = [currentYear, 2025, 2024]
+        const yearsToTry = [currentYear, 2025, 2024, 2023]
 
         let bestYear = selectedYear === "AUTO" ? currentYear : parseInt(selectedYear)
         let maxCount = -1
@@ -311,7 +309,10 @@ export function StrategicDashboard() {
     }
 
     // Calculate Metrics (Refining with Strategic Objectives logic)
-    const activeEpics = allEpics.filter(e => !e.fields.status.name.toLowerCase().includes("cancel"))
+    const activeEpics = allEpics.filter(e => {
+        const statusName = e.fields?.status?.name || ""
+        return !statusName.toLowerCase().includes("cancel")
+    })
 
     // Calculate global progress based on Strategic Objectives if they exist
     const objectivesForCalc = strategicObjectives.filter(o => !o.excludeFromCalculation)
@@ -337,6 +338,12 @@ export function StrategicDashboard() {
     }
 
     const totalInitiatives = activeEpics.length
+    const doneInitiatives = activeEpics.filter(e => e.fields?.status?.statusCategory?.key === 'done').length
+    const successRate = totalInitiatives > 0 ? Math.round((doneInitiatives / totalInitiatives) * 100) : 0
+
+    const currentQuarterNum = Math.floor(new Date().getMonth() / 3) + 1
+    const currentQuarterLabel = `Q${currentQuarterNum}`
+    const currentQuarterCount = quarterlyData.find(q => q.quarter === currentQuarterLabel)?.count || 0
 
     const EpicList = ({ title, list }: { title: string, list: JiraIssue[] }) => (
         <div className="space-y-4 mb-8">
@@ -454,15 +461,15 @@ export function StrategicDashboard() {
                     trend={{ value: 4, isPositive: true }}
                 />
                 <StatCard
-                    title="Entrega Q4"
-                    value={quarterlyData[3]?.count || 0}
+                    title={`Entrega ${currentQuarterLabel}`}
+                    value={currentQuarterCount}
                     icon={Zap}
                     gradient="green"
                     className="h-full"
                 />
                 <StatCard
                     title="Taxa de Successo"
-                    value="92%"
+                    value={`${successRate}%`}
                     icon={LayoutDashboard}
                     gradient="orange"
                     className="h-full"
@@ -473,8 +480,8 @@ export function StrategicDashboard() {
             {quarterlyData.some(q => q.count > 0) && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Tarefas OKR Concluídas por Trimestre ({displayYear})</CardTitle>
-                        <CardDescription>Quantidade de tarefas finalizadas dos OKRs em cada período</CardDescription>
+                        <CardTitle>Tarefas Concluídas por Trimestre ({displayYear})</CardTitle>
+                        <CardDescription>Volume de entregas finalizadas (Stories/Tasks) em cada período</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="h-[280px]">
