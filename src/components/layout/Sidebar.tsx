@@ -30,19 +30,8 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
         if (!user) return false;
         if (user.role === 'admin') return true;
 
-        // Special rule: users with 'reports' access can see all panels EXCEPT settings
-        // This allows them to generate reports from all data sources
-        if (user.allowedPanels?.includes('reports')) {
-            // Deny access to settings/user management
-            if (panelId === 'settings') {
-                return false;
-            }
-            // Allow access to all other panels for report generation
-            return true;
-        }
-
-        // Normal permission check
-        return user.allowedPanels?.includes(panelId);
+        // Normal permission check - Strict Array match to avoid partial string matches
+        return Array.isArray(user.allowedPanels) && user.allowedPanels.includes(panelId);
     }
 
     const NavLink = ({
@@ -60,10 +49,10 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
             to={to}
             onClick={onItemClick}
             className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 active
-                    ? "bg-realestate-primary-500/10 text-realestate-primary-400"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                    ? "bg-realestate-primary-500/10 text-realestate-primary-600 shadow-sm"
+                    : "text-slate-500 hover:bg-slate-100/80 hover:text-realestate-primary-600"
             )}
         >
             {/* Active indicator */}
@@ -109,110 +98,121 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
                     <Home className="h-5 w-5 text-white" />
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-base font-bold text-white tracking-tight">Ion Dashboard</span>
-                    <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Strategic OKR</span>
+                    <span className="text-base font-black text-slate-900 tracking-tight">Ion Dashboard</span>
+                    <span className="text-[10px] uppercase font-black tracking-widest text-slate-400">Strategic OKR</span>
                 </div>
             </div>
         );
     };
 
     return (
-        <div className={cn("pb-12 h-full bg-gradient-sidebar", className)}>
+        <div className={cn("pb-12 h-full bg-white border-r border-slate-100 shadow-sm transition-all duration-300", className)}>
             {/* Logo Section */}
-            <div className="px-6 py-8 border-b border-white/5">
+            <div className="px-6 py-8 border-b border-slate-50">
                 <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
                     <LogoContent />
                 </Link>
             </div>
 
             <div className="space-y-4 py-4">
-                <div className="px-3 py-2">
-                    <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        {t('sidebar.dashboard', 'Dashboard')}
-                    </h2>
-                    <div className="space-y-1">
-                        {canAccess('strategic-objectives') && (
-                            <NavLink to="/strategic-objectives" active={pathname === "/strategic-objectives"} badge={{ text: "v2", variant: "new" }}>
-                                <Target className="h-4 w-4" />
-                                <span>{t('sidebar.strategic_objectives', 'Strategic Objectives')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('strategic') && (
-                            <NavLink to="/strategic" active={pathname === "/strategic" || pathname === "/"}>
-                                <LayoutDashboard className="h-4 w-4" />
-                                <span>{t('sidebar.strategic_overview', 'Strategic Overview')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('okr') && (
-                            <NavLink to="/okr" active={pathname === "/okr"}>
-                                <BarChart3 className="h-4 w-4" />
-                                <span>{t('sidebar.okr_tracking', 'OKR Tracking')}</span>
-                            </NavLink>
-                        )}
+                {/* Dashboard Section - Hide if empty */}
+                {(canAccess('strategic') || canAccess('strategic-objectives') || canAccess('okr')) && (
+                    <div className="px-3 py-2">
+                        <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {t('sidebar.dashboard', 'Dashboard')}
+                        </h2>
+                        <div className="space-y-1">
+                            {canAccess('strategic-objectives') && (
+                                <NavLink to="/strategic-objectives" active={pathname === "/strategic-objectives"} badge={{ text: "v2", variant: "new" }}>
+                                    <Target className="h-4 w-4" />
+                                    <span>{t('sidebar.strategic_objectives', 'Strategic Objectives')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('strategic') && (
+                                <NavLink to="/strategic" active={pathname === "/strategic" || pathname === "/"}>
+                                    <LayoutDashboard className="h-4 w-4" />
+                                    <span>{t('sidebar.strategic_overview', 'Strategic Overview')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('okr') && (
+                                <NavLink to="/okr" active={pathname === "/okr"}>
+                                    <BarChart3 className="h-4 w-4" />
+                                    <span>{t('sidebar.okr_tracking', 'OKR Tracking')}</span>
+                                </NavLink>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Analysis Section */}
-                <div className="px-3 py-2 border-t border-white/10 pt-4">
-                    <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        {t('sidebar.analysis', 'Analysis')}
-                    </h2>
-                    <div className="space-y-1">
-                        {canAccess('analysis') && (
-                            <NavLink
-                                to="/epic-analysis"
-                                active={pathname === "/epic-analysis"}
-                                badge={{ text: "NEW", variant: "new" }}
-                            >
-                                <BarChart3 className="h-4 w-4" />
-                                <span>{t('sidebar.epic_analysis', 'Epic Analysis')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('extra-analysis') && (
-                            <NavLink to="/extra-analysis" active={pathname === "/extra-analysis"}>
-                                <Layers className="h-4 w-4" />
-                                <span>{t('sidebar.extra_initiatives', 'Extra Initiatives')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('assessment') && (
-                            <NavLink to="/assessment" active={pathname === "/assessment"}>
-                                <Percent className="h-4 w-4" />
-                                <span>{t('sidebar.results_assessment', 'Results Assessment')}</span>
-                            </NavLink>
-                        )}
+                {/* Analysis Section - Hide if empty */}
+                {(canAccess('analysis') || canAccess('extra-analysis') || canAccess('assessment')) && (
+                    <div className="px-3 py-2 border-t border-slate-50 pt-4">
+                        <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {t('sidebar.analysis', 'Analysis')}
+                        </h2>
+                        <div className="space-y-1">
+                            {canAccess('analysis') && (
+                                <NavLink
+                                    to="/epic-analysis"
+                                    active={pathname === "/epic-analysis"}
+                                    badge={{ text: "NEW", variant: "new" }}
+                                >
+                                    <BarChart3 className="h-4 w-4" />
+                                    <span>{t('sidebar.epic_analysis', 'Epic Analysis')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('extra-analysis') && (
+                                <NavLink to="/extra-analysis" active={pathname === "/extra-analysis"}>
+                                    <Layers className="h-4 w-4" />
+                                    <span>{t('sidebar.extra_initiatives', 'Extra Initiatives')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('assessment') && (
+                                <NavLink to="/assessment" active={pathname === "/assessment"}>
+                                    <Percent className="h-4 w-4" />
+                                    <span>{t('sidebar.results_assessment', 'Results Assessment')}</span>
+                                </NavLink>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Management Section */}
-                <div className="px-3 py-2 border-t border-white/10 pt-4">
-                    <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        {t('sidebar.management', 'Management')}
-                    </h2>
-                    <div className="space-y-1">
-                        {canAccess('manual-okrs') && (
-                            <NavLink to="/manual-okrs" active={pathname === "/manual-okrs"}>
-                                <Edit3 className="h-4 w-4" />
-                                <span>{t('sidebar.manual_okrs', 'Manual OKRs')}</span>
-                            </NavLink>
-                        )}
-                        {canAccess('reports') && (
-                            <NavLink to="/reports" active={pathname === "/reports"}>
-                                <FileBarChart className="h-4 w-4" />
-                                <span>{t('sidebar.reports', 'Reports')}</span>
-                            </NavLink>
-                        )}
-                        <NavLink to="/status" active={pathname === "/status"}>
-                            <Activity className="h-4 w-4" />
-                            <span>Status</span>
-                        </NavLink>
-                        {canAccess('settings') && (
-                            <NavLink to="/settings" active={pathname === "/settings"}>
-                                <Settings className="h-4 w-4" />
-                                <span>{t('sidebar.settings', 'Settings')}</span>
-                            </NavLink>
-                        )}
+                {/* Management Section - Hide if empty */}
+                {(canAccess('manual-okrs') || canAccess('reports') || canAccess('status') || canAccess('settings')) && (
+                    <div className="px-3 py-2 border-t border-slate-50 pt-4">
+                        <h2 className="mb-3 px-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            {t('sidebar.management', 'Management')}
+                        </h2>
+                        <div className="space-y-1">
+                            {canAccess('manual-okrs') && (
+                                <NavLink to="/manual-okrs" active={pathname === "/manual-okrs"}>
+                                    <Edit3 className="h-4 w-4" />
+                                    <span>{t('sidebar.manual_okrs', 'Manual OKRs')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('reports') && (
+                                <NavLink to="/reports" active={pathname === "/reports"}>
+                                    <FileBarChart className="h-4 w-4" />
+                                    <span>{t('sidebar.reports', 'Reports')}</span>
+                                </NavLink>
+                            )}
+                            {canAccess('status') && (
+                                <NavLink to="/status" active={pathname === "/status"}>
+                                    <Activity className="h-4 w-4" />
+                                    <span>Status</span>
+                                </NavLink>
+                            )}
+                            {canAccess('settings') && (
+                                <NavLink to="/settings" active={pathname === "/settings"}>
+                                    <Settings className="h-4 w-4" />
+                                    <span>{t('sidebar.settings', 'Settings')}</span>
+                                </NavLink>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     )

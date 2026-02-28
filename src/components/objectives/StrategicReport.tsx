@@ -76,7 +76,9 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-100/50 flex flex-col justify-center">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">OBJETIVOS ANALISADOS</p>
-                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none">9</h2>
+                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none">
+                            {objectives.length}
+                        </h2>
                     </div>
 
                     <div className="bg-[#FF4200] p-8 rounded-[40px] text-white shadow-2xl shadow-orange-200 dark:shadow-none flex flex-col justify-center relative overflow-hidden group">
@@ -89,8 +91,10 @@ export const StrategicReport: React.FC<StrategicReportProps> = ({ objectives, ep
                     </div>
 
                     <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-100/50 flex flex-col justify-center">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">METAS NO CÁLCULO</p>
-                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none">8</h2>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">ESFORÇO INVESTIDO</p>
+                        <h2 className="text-7xl font-black text-[#001540] dark:text-white leading-none tracking-tighter">
+                            {objectives.reduce((acc, obj) => acc + obj.epicKeys.reduce((eAcc, key) => eAcc + (epicData[key]?.hours || 0), 0), 0).toFixed(0)}<span className="text-3xl ml-1">h</span>
+                        </h2>
                     </div>
                 </div>
 

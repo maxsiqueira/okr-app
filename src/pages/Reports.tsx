@@ -147,71 +147,131 @@ export default function Reports() {
                 year: 'numeric'
             });
 
-            // Generate high-fidelity HTML template
+            const totalEffort = objectives.reduce((acc, obj) => acc + (obj.epicKeys || []).reduce((eAcc: number, key: string) => eAcc + (epicData[key]?.hours || 0), 0), 0).toFixed(0);
+            const jiraBaseUrl = (user?.jiraUrl || "").replace(/\/$/, "");
+
+            // Generate high-fidelity HTML template mirroring the "State of the Art" UI
             const emailHtml = `
             <!DOCTYPE html>
             <html>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f9; padding: 40px 20px; color: #001540;">
-                <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
-                    <!-- Header -->
-                    <div style="background-color: #001540; padding: 40px; text-align: center;">
-                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase;">
-                            Apuração <span style="color: #FF4200;">Estratégica</span>
-                        </h1>
-                        <p style="color: rgba(255,255,255,0.6); margin-top: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">
-                            Intelligence & Analytics • ${today}
-                        </p>
+            <body style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #001540; margin: 0;">
+                <div style="max-width: 800px; margin: 0 auto; background-color: #ffffff; border-radius: 40px; overflow: hidden; box-shadow: 0 40px 100px -20px rgba(0, 21, 64, 0.15); border: 1px solid #f1f5f9;">
+                    
+                    <!-- Top Branding Bar -->
+                    <div style="background-color: #001540; padding: 15px 40px; color: white; font-size: 10px; font-weight: 900; letter-spacing: 0.3em; text-transform: uppercase;">
+                        ION SISTEMAS • STRATEGY REPORT 2025
                     </div>
 
-                    <!-- Summary KPI -->
-                    <div style="padding: 40px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-                        <p style="margin: 0; font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em;">
-                            Percentual Médio Apurado
-                        </p>
-                        <div style="font-size: 72px; font-weight: 900; color: #FF4200; line-height: 1; margin: 10px 0;">
-                            ${avgProgress}%
-                        </div>
-                        <div style="display: inline-block; padding: 6px 16px; background-color: #f1f5f9; border-radius: 100px; font-size: 10px; font-weight: 900; color: #64748b;">
-                            ${objectives.length} OBJETIVOS ANALISADOS
+                    <!-- Header Segment -->
+                    <div style="padding: 40px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <h1 style="margin: 0; font-size: 32px; font-weight: 950; letter-spacing: -0.04em; text-transform: uppercase; line-height: 0.9;">
+                                APURAÇÃO <span style="color: #FF4200;">ESTRATÉGICA</span>
+                            </h1>
+                            <p style="margin: 8px 0 0; font-size: 14px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">
+                                Performance & Roadmaps • ${today}
+                            </p>
                         </div>
                     </div>
 
-                    <!-- Table -->
-                    <div style="padding: 20px;">
-                        <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                    <!-- KPI Grid (3 Cards) -->
+                    <div style="padding: 20px 40px; display: table; width: 100%; border-spacing: 15px; border-collapse: separate;">
+                        <div style="display: table-row;">
+                            <!-- Card 1: Objectives -->
+                            <div style="display: table-cell; background-color: #ffffff; border: 1px solid #f1f5f9; padding: 25px; border-radius: 30px; width: 33%; vertical-align: middle;">
+                                <p style="margin: 0 0 10px; font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em;">Objetivos</p>
+                                <div style="font-size: 48px; font-weight: 900; color: #001540; line-height: 1;">${objectives.length}</div>
+                            </div>
+                            <!-- Card 2: Percentage (Highlight) -->
+                            <div style="display: table-cell; background-color: #FF4200; padding: 25px; border-radius: 30px; width: 33%; color: white; vertical-align: middle; box-shadow: 0 20px 40px -10px rgba(255, 66, 0, 0.3);">
+                                <p style="margin: 0 0 10px; font-size: 9px; font-weight: 900; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.2em;">Progresso</p>
+                                <div style="font-size: 60px; font-weight: 950; line-height: 1;">${avgProgress}%</div>
+                            </div>
+                            <!-- Card 3: Effort -->
+                            <div style="display: table-cell; background-color: #ffffff; border: 1px solid #f1f5f9; padding: 25px; border-radius: 30px; width: 33%; vertical-align: middle;">
+                                <p style="margin: 0 0 10px; font-size: 9px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.2em;">Investimento</p>
+                                <div style="font-size: 42px; font-weight: 900; color: #001540; line-height: 1;">${totalEffort}<span style="font-size: 20px; color: #94a3b8; margin-left: 2px;">h</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Table Header -->
+                    <div style="padding: 0 40px;">
+                        <div style="background-color: #001540; color: white; padding: 15px 25px; border-radius: 20px 20px 0 0; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.3em; display: table; width: 100%; box-sizing: border-box;">
+                            <div style="display: table-cell; width: 50%;">Objetivo / Tickets</div>
+                            <div style="display: table-cell; width: 15%; text-align: center;">Horas</div>
+                            <div style="display: table-cell; width: 20%; text-align: center;">Progresso</div>
+                            <div style="display: table-cell; width: 15%; text-align: right;">Status</div>
+                        </div>
+                    </div>
+
+                    <!-- Items List -->
+                    <div style="padding: 0 40px 40px;">
+                        <div style="border: 1px solid #f1f5f9; border-top: none; border-radius: 0 0 20px 20px; overflow: hidden;">
                             ${objectives.map(obj => {
                 const progSum = (obj.epicKeys || []).reduce((eAcc: number, eKey: string) => eAcc + (epicData[eKey]?.progress || 0), 0)
                 const jiraProg = (obj.epicKeys || []).length > 0 ? Math.round(progSum / obj.epicKeys.length) : 0
                 const actualProg = obj.suggestedProgress != null ? obj.suggestedProgress : jiraProg
                 const isManual = obj.suggestedProgress != null
+                const hours = (obj.epicKeys || []).reduce((eAcc: number, eKey: string) => eAcc + (epicData[eKey]?.hours || 0), 0)
+
+                // Get tickets for this objective
+                const tickets = (obj.epicKeys || []).flatMap((key: string) => {
+                    const info = epicData[key];
+                    if (!info || !info.children) return [];
+                    return info.children.map((c: any) => ({ key: c.key, done: c.fields?.status?.statusCategory?.key === 'done' }));
+                }).sort((a: any, b: any) => a.key.localeCompare(b.key));
 
                 return `
-                                <tr style="background-color: #f8fafc;">
-                                    <td style="padding: 20px; border-radius: 16px 0 0 16px;">
-                                        <div style="font-weight: 900; font-size: 13px; margin-bottom: 4px; text-transform: uppercase;">${obj.title}</div>
-                                        <div style="font-size: 11px; color: #94a3b8; font-weight: 500;">
-                                            ${obj.description?.substring(0, 100)}${obj.description?.length > 100 ? '...' : ''}
+                                <div style="padding: 25px; border-bottom: 1px solid #f1f5f9; display: table; width: 100%; box-sizing: border-box;">
+                                    <!-- Objective & Tickets -->
+                                    <div style="display: table-cell; width: 50%; vertical-align: top;">
+                                        <div style="font-weight: 900; font-size: 15px; margin-bottom: 4px; text-transform: uppercase; color: #001540;">${obj.title}</div>
+                                        <div style="font-size: 11px; color: #94a3b8; font-weight: 500; margin-bottom: 12px; line-height: 1.4;">
+                                            ${obj.description || 'Sem descrição cadastrada.'}
                                         </div>
-                                        <div style="font-size: 10px; color: #475569; font-weight: 700; margin-top: 4px;">
-                                            ${obj.epicKeys?.length || 0} Iniciativas • Esforço: ${(obj.epicKeys || []).reduce((acc: number, key: string) => acc + (epicData[key]?.hours || 0), 0).toFixed(1)}h
+                                        
+                                        <!-- Tickets Row -->
+                                        <div style="display: block; font-size: 0;">
+                                            ${tickets.map((t: any) => `
+                                                <a href="${jiraBaseUrl}/browse/${t.key}" target="_blank" style="display: inline-block; text-decoration: none; margin-bottom: 4px;">
+                                                    <span style="display: inline-block; padding: 3px 7px; margin: 0 4px 0 0; background-color: ${t.done ? '#ecfdf5' : '#f8fafc'}; border: 1px solid ${t.done ? '#d1fae5' : '#f1f5f9'}; border-radius: 6px; font-size: 9px; font-weight: 900; color: ${t.done ? '#059669' : '#64748b'};">
+                                                        ${t.key}
+                                                    </span>
+                                                </a>
+                                            `).join('')}
                                         </div>
-                                    </td>
-                                    <td style="padding: 20px; border-radius: 0 16px 16px 0; text-align: right;">
-                                        <div style="font-size: 20px; font-weight: 900; color: ${actualProg >= 100 ? '#10B981' : '#001540'};">
+                                    </div>
+
+                                    <!-- Hours -->
+                                    <div style="display: table-cell; width: 15%; vertical-align: top; text-align: center; font-weight: 900; font-size: 16px; color: #001540; padding-top: 5px;">
+                                        ${hours.toFixed(1)}h
+                                    </div>
+
+                                    <!-- Progress -->
+                                    <div style="display: table-cell; width: 20%; vertical-align: top; text-align: center; padding-top: 5px;">
+                                        <div style="font-size: 24px; font-weight: 950; color: ${actualProg === 100 ? '#FF4200' : '#001540'}; line-height: 1.1;">
                                             ${actualProg}%
                                         </div>
-                                        ${isManual ? '<span style="font-size: 8px; font-weight: 900; background: #001540; color: white; padding: 2px 6px; border-radius: 4px;">MANUAL</span>' : ''}
-                                    </td>
-                                </tr>
+                                        ${isManual ? '<div style="font-size: 8px; font-weight: 900; background-color: #001540; color: white; display: inline-block; padding: 2px 6px; border-radius: 4px; margin-top: 4px;">MANUAL</div>' : ''}
+                                    </div>
+
+                                    <!-- Status -->
+                                    <div style="display: table-cell; width: 15%; vertical-align: top; text-align: right; padding-top: 5px;">
+                                        <div style="display: inline-block; padding: 6px 12px; border-radius: 100px; font-size: 9px; font-weight: 900; text-transform: uppercase; background-color: ${actualProg >= 100 ? '#E6FFFA' : (actualProg > 0 ? '#FFFAF0' : '#f1f5f9')}; color: ${actualProg >= 100 ? '#2D3748' : (actualProg > 0 ? '#FF4200' : '#94a3b8')};">
+                                            ${actualProg >= 100 ? 'Feito' : (actualProg > 0 ? 'WIP' : 'Pendente')}
+                                        </div>
+                                    </div>
+                                </div>
                                 `
             }).join('')}
-                        </table>
+                        </div>
                     </div>
 
-                    <!-- Footer -->
-                    <div style="padding: 40px; background-color: #f8fafc; text-align: center;">
-                        <p style="margin: 0; font-size: 10px; font-weight: 700; color: #cbd5e1; letter-spacing: 0.3em; text-transform: uppercase;">
-                            ION SISTEMAS • STRATEGY 2025
+                    <!-- Final Footer Section -->
+                    <div style="padding: 40px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f1f5f9;">
+                        <p style="margin: 0; font-size: 10px; font-weight: 900; color: #cbd5e1; letter-spacing: 0.4em; text-transform: uppercase;">
+                            Intelligence & Analytics Unit • 2025
                         </p>
                     </div>
                 </div>
@@ -219,14 +279,30 @@ export default function Reports() {
             </html>
             `;
 
+            // Clean and prepare recipients
+            const cleanedRecipients = targetEmails
+                .split(/[,;\n]/)
+                .map(e => e.trim())
+                .filter(e => {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    return e.length > 0 && emailRegex.test(e);
+                })
+                .join(', ');
+
+            if (!cleanedRecipients) {
+                alert("Nenhum endereço de e-mail válido foi informado. Verifique se há erros de digitação (ex: pontos extras ou falta de @).");
+                setSendingEmail(false);
+                return;
+            }
+
             await EmailService.sendEmail({
-                to: targetEmails,
+                to: cleanedRecipients,
                 subject: `Relatório Estratégico ION - ${today}`,
                 text: `Relatório de Performance: ${avgProgress}% de progresso médio nos ${objectives.length} objetivos.`,
                 html: emailHtml
             });
 
-            alert(`Sucesso! O relatório foi enviado para: ${targetEmails}`)
+            alert(`Sucesso! O relatório foi enviado para: ${cleanedRecipients}`)
             setEmailModal({ ...emailModal, open: false })
         } catch (error: any) {
             console.error("Failed to send email:", error)

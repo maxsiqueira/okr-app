@@ -30,6 +30,8 @@ const AVAILABLE_PANELS = [
     { id: 'extra-analysis', label: 'Extra Initiatives' },
     { id: 'assessment', label: 'Results Assessment' },
     { id: 'manual-okrs', label: 'Manual OKRs' },
+    { id: 'reports', label: 'Reports & Analytics' },
+    { id: 'status', label: 'System Status' },
     { id: 'settings', label: 'Settings & Administration' },
 ];
 

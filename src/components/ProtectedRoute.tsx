@@ -43,16 +43,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             return <Navigate to="/unauthorized" replace />;
         }
 
-        // EXCEÇÃO: Usuários com 'reports' podem ver tudo exceto settings (igual ao Sidebar)
-        if (user.allowedPanels.includes('reports')) {
-            if (requiredPanel === 'settings') {
-                return <Navigate to="/" replace />;
-            }
-            return <>{children}</>;
-        }
-
         // 2. Verificar se o painel requerido está na lista de permitidos
-        if (!user.allowedPanels.includes(requiredPanel)) {
+        const allowedPanels = Array.isArray(user.allowedPanels) ? user.allowedPanels : [];
+        if (!allowedPanels.includes(requiredPanel)) {
             console.warn(
                 `[ProtectedRoute] ❌ Acesso negado ao painel '${requiredPanel}'`,
                 `\nUsuário: ${user.email}`,

@@ -55,11 +55,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     // Existing user - update state from Firestore
                     const userData = userDoc.data();
-                    let userPanels = userData?.allowedPanels || [];
+                    // Normalization: Ensure allowedPanels is ALWAYS an array (handles legacy string data)
+                    let userPanelsRaw = userData?.allowedPanels || [];
+                    let userPanels: string[] = [];
 
-                    // Assign defaults if panels are empty (but not for admins)
-                    if (userPanels.length === 0 && !userData?.isBlocked && userData?.role !== 'admin') {
-                        userPanels = ['strategic', 'okr', 'reports'];
+                    if (Array.isArray(userPanelsRaw)) {
+                        userPanels = userPanelsRaw;
+                    } else if (typeof userPanelsRaw === 'string') {
+                        // legacy comma-separated string normalization
+                        userPanels = (userPanelsRaw as string).split(',').map((p: string) => p.trim()).filter(Boolean);
                     }
 
                     const appUser: AppUser = {

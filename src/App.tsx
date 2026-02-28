@@ -41,8 +41,8 @@ const LandingRedirect = () => {
   // God Mode
   if (user.role === 'admin') return <Navigate to="/strategic" replace />;
 
-  // Find first allowed panel
-  const allowedPanels = user.allowedPanels || [];
+  // Find first allowed panel - Ensure strict array for exact matching
+  const allowedPanels = Array.isArray(user.allowedPanels) ? user.allowedPanels : [];
 
   // Ordered priority (same as sidebar)
   const routes: Record<string, string> = {
@@ -64,9 +64,8 @@ const LandingRedirect = () => {
     }
   }
 
-  // Fallback: If user is authenticated but has no panels (should be fixed by AuthContext, but just in case)
-  // Redirect to Strategic Dashboard as a safe default instead of Unauthorized
-  return <Navigate to="/strategic" replace />;
+  // Fallback: If user is authenticated but has no panels, send to unauthorized
+  return <Navigate to="/unauthorized" replace />;
 }
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -154,7 +153,7 @@ function App() {
                     } />
 
                     <Route path="/status" element={
-                      <ProtectedRoute>
+                      <ProtectedRoute requiredPanel="status">
                         <StatusPage />
                       </ProtectedRoute>
                     } />
