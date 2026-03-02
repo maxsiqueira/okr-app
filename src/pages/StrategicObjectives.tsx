@@ -87,6 +87,9 @@ export function StrategicObjectives() {
     const [sendingEmail, setSendingEmail] = useState(false)
     const [emailModal, setEmailModal] = useState<{ open: boolean, reportType: 'strategic', defaultEmails: string }>({ open: false, reportType: 'strategic', defaultEmails: '' })
     const [recipients, setRecipients] = useState("")
+    const [ccRecipients, setCcRecipients] = useState("")
+    const [appAccessLink, setAppAccessLink] = useState(window.location.origin)
+    const [accessCredentials, setAccessCredentials] = useState("Login: okr@ionsistemas.com.br | Senha: okr2025")
 
     useEffect(() => {
         // Firestore Real-time sync for Objectives
@@ -334,7 +337,7 @@ export function StrategicObjectives() {
         setRecipients(user.email)
     }
 
-    const executeSendStrategicEmail = async (targetEmails: string) => {
+    const executeSendStrategicEmail = async (targetEmails: string, ccEmails: string = "") => {
         console.log("[StrategicObjectives] Triggering Strategic Email Report to:", targetEmails)
 
         // Ensure auth token is fresh to avoid "User must be authenticated" errors
@@ -381,6 +384,22 @@ export function StrategicObjectives() {
                             </p>
                         </div>
                     </div>
+
+                    <!-- ACCESS CREDENTIALS (NEW TOP SECTION) -->
+                    ${appAccessLink ? `
+                    <div style="padding: 25px 40px; background-color: #f8fafc; border-bottom: 1px solid #f1f5f9; text-align: center;">
+                        <div style="margin-bottom: 15px;">
+                            <a href="${appAccessLink}" style="display: inline-block; padding: 14px 35px; background-color: #001540; color: #ffffff; text-decoration: none; border-radius: 14px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; box-shadow: 0 10px 20px -5px rgba(0, 21, 64, 0.3);">
+                                Acessar Dashboard Completo
+                            </a>
+                        </div>
+                        ${accessCredentials ? `
+                        <div style="font-size: 12px; color: #475569; font-weight: 800; background: #ffffff; border: 1.5px dashed #cbd5e1; padding: 12px 20px; border-radius: 12px; display: inline-block; font-family: 'Courier New', Courier, monospace;">
+                            ${accessCredentials}
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
 
                     <!-- KPI Grid (3 Cards) -->
                     <div style="padding: 20px 40px; display: table; width: 100%; border-spacing: 15px; border-collapse: separate;">
@@ -486,7 +505,7 @@ export function StrategicObjectives() {
             `;
 
             // Clean and prepare recipients
-            const cleanedRecipients = targetEmails
+            const clean = (emails: string) => emails
                 .split(/[,;\n]/)
                 .map(e => e.trim())
                 .filter(e => {
@@ -494,6 +513,9 @@ export function StrategicObjectives() {
                     return e.length > 0 && emailRegex.test(e);
                 })
                 .join(', ');
+
+            const cleanedRecipients = clean(targetEmails);
+            const cleanedCc = clean(ccEmails);
 
             if (!cleanedRecipients) {
                 alert("Nenhum endereço de e-mail válido foi informado. Verifique se há erros de digitação (ex: pontos extras ou falta de @).");
@@ -503,6 +525,7 @@ export function StrategicObjectives() {
 
             await EmailService.sendEmail({
                 to: cleanedRecipients,
+                cc: cleanedCc || undefined,
                 subject: `Relatório Estratégico ION - ${today}`,
                 text: `Relatório de Performance: ${avgProgress}% de progresso médio nos ${objectives.length} objetivos.`,
                 html: emailHtml
@@ -741,13 +764,21 @@ export function StrategicObjectives() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <div className="flex items-center justify-end gap-1 px-2">
-                                                    <Button variant="ghost" size="sm" onClick={() => startEditing(obj)} className="text-slate-400 hover:text-[#FF4200] hover:bg-orange-50 transition-colors p-2 rounded-lg">
+                                                <div className="flex items-center justify-end gap-2 px-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => startEditing(obj)}
+                                                        className="text-blue-600 border-blue-100 bg-blue-50/50 hover:bg-blue-600 hover:text-white transition-all p-2 rounded-lg shadow-sm"
+                                                        title="Editar Objetivo"
+                                                    >
                                                         <Pencil className="h-4 w-4" />
                                                     </Button>
-                                                    <Button variant="ghost" size="sm" onClick={() => handleDelete(obj.id)} className="text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors p-2 rounded-lg">
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    {user?.role === 'admin' && (
+                                                        <Button variant="ghost" size="sm" onClick={() => handleDelete(obj.id)} className="text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors p-2 rounded-lg">
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             </TableCell>
                                         </TableRow>
@@ -934,17 +965,49 @@ export function StrategicObjectives() {
                             <CardTitle className="text-xl font-black uppercase tracking-tight">Destinatários</CardTitle>
                             <CardDescription className="text-blue-200">Informe os e-mails para envio (separados por vírgula).</CardDescription>
                         </CardHeader>
-                        <CardContent className="p-8 space-y-6">
+                        <CardContent className="p-8 space-y-5">
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lista de E-mails</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Para: (Recipientes Principais)</label>
                                 <textarea
-                                    className="w-full h-32 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
-                                    placeholder="email1@empresa.com, email2@empresa.com"
+                                    className="w-full h-24 p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
+                                    placeholder="email@empresa.com, email2@empresa.com"
                                     value={recipients}
                                     onChange={(e) => setRecipients(e.target.value)}
                                 />
                             </div>
-                            <div className="flex gap-3">
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cc: (Cópia para)</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-12 text-sm font-medium"
+                                    placeholder="email-copia@empresa.com"
+                                    value={ccRecipients}
+                                    onChange={(e) => setCcRecipients(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link de Acesso (App)</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-11 text-xs font-medium text-blue-600"
+                                    placeholder="https://..."
+                                    value={appAccessLink}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAppAccessLink(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credenciais de Acesso</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-11 text-xs font-medium"
+                                    placeholder="Login: user | Senha: pas..."
+                                    value={accessCredentials}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAccessCredentials(e.target.value)}
+                                />
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight italic">Será exibido abaixo do botão de acesso.</p>
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
                                 <Button
                                     variant="outline"
                                     onClick={() => setEmailModal({ ...emailModal, open: false })}
@@ -953,13 +1016,13 @@ export function StrategicObjectives() {
                                     CANCELAR
                                 </Button>
                                 <Button
-                                    className="flex-1 bg-[#FF4200] hover:bg-[#FF4200]/90 text-white font-black uppercase rounded-2xl h-12"
+                                    className="flex-1 bg-[#001540] hover:bg-[#001540]/90 text-white font-black uppercase rounded-2xl h-12 shadow-xl shadow-blue-900/10"
                                     disabled={sendingEmail}
                                     onClick={() => {
-                                        executeSendStrategicEmail(recipients)
+                                        executeSendStrategicEmail(recipients, ccRecipients)
                                     }}
                                 >
-                                    {sendingEmail ? 'ENVIANDO...' : 'ENVIAR AGORA'}
+                                    {sendingEmail ? 'ENVIANDO...' : 'DISPARAR'}
                                 </Button>
                             </div>
                         </CardContent>

@@ -10,9 +10,9 @@ interface AnalysisContext {
 }
 
 export const AiService = {
-    generateInsights: async (context: AnalysisContext): Promise<string> => {
+    generateInsights: async (context: AnalysisContext, providedKey?: string): Promise<string> => {
         try {
-            const rawKey = localStorage.getItem("gemini_api_key")
+            const rawKey = providedKey || localStorage.getItem("gemini_api_key")
             const apiKey = rawKey?.trim()
 
             const prompt = `Analise os seguintes dados OKR da ION Sistemas e gere um relatório executivo PT-BR estruturado (1. Sumário, 2. Progresso Real, 3. Riscos). 

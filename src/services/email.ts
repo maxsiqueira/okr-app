@@ -3,6 +3,7 @@ import { functions } from "@/lib/firebase";
 
 export interface EmailData {
     to: string;
+    cc?: string;
     subject: string;
     text: string;
     html: string;

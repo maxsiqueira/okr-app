@@ -122,7 +122,7 @@ exports.sendEmail = onCall({ timeoutSeconds: 60, memory: '256MiB', cors: true },
         throw new HttpsError('unauthenticated', 'User must be authenticated to send emails.');
     }
 
-    const { to, subject, text, html } = request.data || {};
+    const { to, cc, subject, text, html } = request.data || {};
     const nodemailer = require("nodemailer");
 
     try {
@@ -148,6 +148,7 @@ exports.sendEmail = onCall({ timeoutSeconds: 60, memory: '256MiB', cors: true },
         const mailOptions = {
             from: `"${smtpConfig.fromName || 'Ion Dashboard'}" <${smtpConfig.fromEmail || smtpConfig.user}>`,
             to,
+            cc, // Added CC support
             subject,
             text,
             html,

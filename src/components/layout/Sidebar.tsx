@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, Home, FileBarChart, Activity } from "lucide-react"
+import { BarChart3, LayoutDashboard, Settings, Percent, Target, Edit3, Layers, FileBarChart, Activity } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
@@ -75,32 +75,34 @@ export function Sidebar({ className, onItemClick }: SidebarProps) {
     if (!user) return null;
 
     const LogoContent = () => {
-        if (customLogo) {
-            return (
-                <div className="flex items-center gap-3">
-                    <img
-                        src={customLogo}
-                        alt="Logo"
-                        className="h-10 w-auto max-w-[140px] object-contain rounded-lg shadow-realestate"
-                        onError={(e) => {
-                            // If base64/URL fails, fallback to ion default
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            setCustomLogo(null);
-                        }}
-                    />
-                </div>
-            );
-        }
+        const displayLogo = customLogo || "/ion-logo.png";
 
         return (
             <div className="flex items-center gap-3 font-inter">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-realestate-primary-500 shadow-realestate">
-                    <Home className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex flex-col">
-                    <span className="text-base font-black text-slate-900 tracking-tight">Ion Dashboard</span>
-                    <span className="text-[10px] uppercase font-black tracking-widest text-slate-400">Strategic OKR</span>
-                </div>
+                <img
+                    src={displayLogo}
+                    alt="Logo"
+                    className="h-10 w-auto max-w-[140px] object-contain rounded-lg shadow-sm"
+                    onError={(e) => {
+                        // If base64/URL fails, fallback to icon + text
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        const parent = (e.target as HTMLImageElement).parentElement;
+                        if (parent) {
+                            const fallback = document.createElement('div');
+                            fallback.className = "flex items-center gap-3";
+                            fallback.innerHTML = `
+                                <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-600 shadow-sm">
+                                    <svg class="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="text-base font-black text-slate-900 tracking-tight">Ion Dashboard</span>
+                                    <span class="text-[10px] uppercase font-black tracking-widest text-slate-400">Strategic OKR</span>
+                                </div>
+                            `;
+                            parent.appendChild(fallback);
+                        }
+                    }}
+                />
             </div>
         );
     };

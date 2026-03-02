@@ -82,7 +82,7 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="dark" storageKey="ion-ui-theme">
+      <ThemeProvider defaultTheme="light" storageKey="ion-ui-theme">
         <AuthProvider>
           <SettingsProvider>
             <BrowserRouter>

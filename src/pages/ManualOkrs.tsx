@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Trash2, Printer, ChevronDown, ChevronRight, Target, BarChart3, Pencil } from "lucide-react"
 import { db } from "@/lib/firebase"
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface KeyResult {
     id: string
@@ -24,6 +25,7 @@ interface ManualObjective {
 }
 
 export function ManualOkrs() {
+    const { user } = useAuth();
     const [objectives, setObjectives] = useState<ManualObjective[]>([])
     const [newName, setNewName] = useState("")
     const [newYear, setNewYear] = useState(new Date().getFullYear())
@@ -267,12 +269,13 @@ export function ManualOkrs() {
                                                     <div className="flex items-center gap-2 group/title">
                                                         <h3 className="text-lg font-bold" onClick={() => toggleExpand(obj.id)}>{obj.name}</h3>
                                                         <Button
-                                                            variant="ghost"
+                                                            variant="outline"
                                                             size="sm"
                                                             onClick={(e) => startEditingObj(e, obj)}
-                                                            className="h-6 w-6 p-0 opacity-0 group-hover/title:opacity-100 transition-opacity"
+                                                            className="h-8 w-8 p-0 text-blue-600 border-blue-100 bg-blue-50/50 hover:bg-blue-600 hover:text-white transition-all rounded-lg shadow-sm"
+                                                            title="Editar Objetivo"
                                                         >
-                                                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                                                            <Pencil className="h-3.5 w-3.5" />
                                                         </Button>
                                                     </div>
                                                 )}
@@ -287,14 +290,16 @@ export function ManualOkrs() {
                                                 <div className="h-full bg-primary transition-all duration-500" style={{ width: `${avgProgress}%` }} />
                                             </div>
                                         </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="print:hidden text-red-400 hover:text-red-600 hover:bg-red-50"
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteObjective(obj.id); }}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        {user?.role === 'admin' && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="print:hidden text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteObjective(obj.id); }}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -345,14 +350,16 @@ export function ManualOkrs() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="py-3 text-right print:hidden">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
-                                                                onClick={() => handleDeleteKR(obj.id, kr.id)}
-                                                            >
-                                                                <Plus className="h-4 w-4 rotate-45" />
-                                                            </Button>
+                                                            {user?.role === 'admin' && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-rose-600 hover:bg-rose-50"
+                                                                    onClick={() => handleDeleteKR(obj.id, kr.id)}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            )}
                                                         </TableCell>
                                                     </TableRow>
                                                 ))}

@@ -5,6 +5,7 @@ import { Sparkles, RefreshCw } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, orderBy, limit } from "firebase/firestore";
 import { AiService } from "@/services/ai";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface AiInsightsSectionProps {
     epics: any[];
@@ -13,6 +14,7 @@ interface AiInsightsSectionProps {
 }
 
 export function AiInsightsSection({ epics, strategicObjectives, manualOkrs = [] }: AiInsightsSectionProps) {
+    const { user } = useAuth();
     const [insight, setInsight] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [isEnabled, setIsEnabled] = useState(true);
@@ -51,7 +53,7 @@ export function AiInsightsSection({ epics, strategicObjectives, manualOkrs = [] 
             epics,
             strategicObjectives,
             manualOkrs
-        });
+        }, user?.geminiApiKey);
         setInsight(result);
         await AiService.saveAnalysisResult(result);
         setLoading(false);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { FileBarChart, Printer, Target, LayoutDashboard, BarChart3, ChevronRight, Sparkles } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { StrategicReport } from "@/components/objectives/StrategicReport"
@@ -23,6 +24,9 @@ export default function Reports() {
     const [sendingEmail, setSendingEmail] = useState(false)
     const [emailModal, setEmailModal] = useState<{ open: boolean, reportType: 'strategic' | 'executive', defaultEmails: string }>({ open: false, reportType: 'strategic', defaultEmails: '' })
     const [recipients, setRecipients] = useState("")
+    const [ccRecipients, setCcRecipients] = useState("")
+    const [appAccessLink, setAppAccessLink] = useState(window.location.origin)
+    const [accessCredentials, setAccessCredentials] = useState("Login: okr@ionsistemas.com.br | Senha: okr2025")
 
     useEffect(() => {
         const q = query(collection(db, "strategic_objectives"))
@@ -126,7 +130,7 @@ export default function Reports() {
         setRecipients(user.email)
     }
 
-    const executeSendStrategicEmail = async (targetEmails: string) => {
+    const executeSendStrategicEmail = async (targetEmails: string, ccEmails: string = "") => {
         console.log("[Reports] Triggering Strategic Email Report to:", targetEmails)
 
         // Ensure auth token is fresh to avoid "User must be authenticated" errors
@@ -173,6 +177,22 @@ export default function Reports() {
                             </p>
                         </div>
                     </div>
+
+                    <!-- ACCESS CREDENTIALS (NEW TOP SECTION) -->
+                    ${appAccessLink ? `
+                    <div style="padding: 25px 40px; background-color: #f8fafc; border-bottom: 1px solid #f1f5f9; text-align: center;">
+                        <div style="margin-bottom: 15px;">
+                            <a href="${appAccessLink}" style="display: inline-block; padding: 14px 35px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 14px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s; box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.3);">
+                                Acessar Dashboard Completo
+                            </a>
+                        </div>
+                        ${accessCredentials ? `
+                        <div style="font-size: 12px; color: #475569; font-weight: 800; background: #ffffff; border: 1.5px dashed #cbd5e1; padding: 12px 20px; border-radius: 12px; display: inline-block; font-family: 'Courier New', Courier, monospace;">
+                            ${accessCredentials}
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
 
                     <!-- KPI Grid (3 Cards) -->
                     <div style="padding: 20px 40px; display: table; width: 100%; border-spacing: 15px; border-collapse: separate;">
@@ -280,7 +300,7 @@ export default function Reports() {
             `;
 
             // Clean and prepare recipients
-            const cleanedRecipients = targetEmails
+            const clean = (emails: string) => emails
                 .split(/[,;\n]/)
                 .map(e => e.trim())
                 .filter(e => {
@@ -289,14 +309,18 @@ export default function Reports() {
                 })
                 .join(', ');
 
+            const cleanedRecipients = clean(targetEmails);
+            const cleanedCc = clean(ccEmails);
+
             if (!cleanedRecipients) {
-                alert("Nenhum endereço de e-mail válido foi informado. Verifique se há erros de digitação (ex: pontos extras ou falta de @).");
+                alert("Nenhum endereço de e-mail válido foi informado.");
                 setSendingEmail(false);
                 return;
             }
 
             await EmailService.sendEmail({
                 to: cleanedRecipients,
+                cc: cleanedCc || undefined,
                 subject: `Relatório Estratégico ION - ${today}`,
                 text: `Relatório de Performance: ${avgProgress}% de progresso médio nos ${objectives.length} objetivos.`,
                 html: emailHtml
@@ -312,16 +336,8 @@ export default function Reports() {
         }
     }
 
-    const handleEmailExecutiveReport = async () => {
-        if (!user?.email || !dashboardData) {
-            alert("Erro: Dados não disponíveis.")
-            return
-        }
-        setEmailModal({ open: true, reportType: 'executive', defaultEmails: user.email })
-        setRecipients(user.email)
-    }
 
-    const executeSendExecutiveEmail = async (targetEmails: string) => {
+    const executeSendExecutiveReportEmail = async (targetEmails: string, ccEmails: string = "") => {
         console.log("[Reports] Triggering Executive Snapshot Email to:", targetEmails)
 
         // Ensure auth token is fresh
@@ -336,21 +352,41 @@ export default function Reports() {
 
         setSendingEmail(true)
         try {
-            const today = new Date().toLocaleDateString('pt-BR', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric'
-            });
+            if (!dashboardData) return;
+
+            const today = new Date().toLocaleDateString('pt-BR')
 
             const emailHtml = `
             <!DOCTYPE html>
             <html>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f9; padding: 40px; color: #001540;">
-                <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+            <head>
+                <style>
+                    body { font-family: 'Inter', -apple-system, sans-serif; line-height: 1.6; color: #1e293b; margin: 0; padding: 0; }
+                    .container { max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #f1f5f9; border-radius: 24px; overflow: hidden; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
                     <div style="background-color: #001540; padding: 40px; text-align: center;">
                         <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em;">Snapshot Executivo</h1>
                         <p style="color: #3b82f6; margin-top: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">Performance & Entregas • ${today}</p>
                     </div>
+
+                    <!-- ACCESS CREDENTIALS (NEW TOP SECTION) -->
+                    ${appAccessLink ? `
+                    <div style="padding: 25px 40px; background-color: #f8fafc; border-bottom: 1px solid #f1f5f9; text-align: center;">
+                        <div style="margin-bottom: 15px;">
+                            <a href="${appAccessLink}" style="display: inline-block; padding: 12px 30px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 12px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s;">
+                                Visualizar no Sistema
+                            </a>
+                        </div>
+                        ${accessCredentials ? `
+                        <div style="font-size: 12px; color: #475569; font-weight: 800; background: #ffffff; border: 1.5px dashed #cbd5e1; padding: 10px 20px; border-radius: 12px; display: inline-block; font-family: 'Courier New', Courier, monospace;">
+                            ${accessCredentials}
+                        </div>
+                        ` : ''}
+                    </div>
+                    ` : ''}
                     
                     <div style="padding: 40px;">
                         <div style="text-align: center; padding: 30px; background: #f8fafc; border-radius: 24px; margin-bottom: 30px;">
@@ -372,16 +408,32 @@ export default function Reports() {
                         </div>
                     </div>
 
-                    <div style="padding: 30px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 10px; color: #cbd5e1; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase;">
-                        ION DASHBOARD • STRATEGY ANALYTICS
+                    <div style="padding: 40px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f1f5f9;">
+                        <div style="font-size: 10px; color: #cbd5e1; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase;">
+                            ION DASHBOARD • STRATEGY ANALYTICS
+                        </div>
                     </div>
                 </div>
             </body>
             </html>
             `;
 
+            // Clean and prepare recipients
+            const clean = (emails: string) => emails
+                .split(/[,;\n]/)
+                .map(e => e.trim())
+                .filter(e => {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    return e.length > 0 && emailRegex.test(e);
+                })
+                .join(', ');
+
+            const cleanedRecipients = clean(targetEmails);
+            const cleanedCc = clean(ccEmails);
+
             await EmailService.sendEmail({
-                to: targetEmails,
+                to: cleanedRecipients,
+                cc: cleanedCc || undefined,
                 subject: `Snapshot Executivo ION - ${today}`,
                 text: `Alcanço de Performance: ${dashboardData.avgProgress}% médio em ${dashboardData.totalInitiatives} iniciativas.`,
                 html: emailHtml
@@ -394,6 +446,12 @@ export default function Reports() {
         } finally {
             setSendingEmail(false)
         }
+    }
+
+    const handleEmailExecutiveReport = async () => {
+        if (!user?.email) return
+        setEmailModal({ open: true, reportType: 'executive', defaultEmails: user.email })
+        setRecipients(user.email)
     }
 
     const reportCards = [
@@ -517,17 +575,48 @@ export default function Reports() {
                             <CardTitle className="text-xl font-black uppercase tracking-tight">Destinatários</CardTitle>
                             <CardDescription className="text-blue-200">Informe os e-mails para envio (separados por vírgula).</CardDescription>
                         </CardHeader>
-                        <CardContent className="p-8 space-y-6">
+                        <CardContent className="p-8 space-y-5">
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lista de E-mails</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Para: (Recipientes Principais)</label>
                                 <textarea
-                                    className="w-full h-32 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
-                                    placeholder="email1@empresa.com, email2@empresa.com"
+                                    className="w-full h-24 p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-sm font-medium outline-none focus:ring-2 focus:ring-[#FF4200] transition-all"
+                                    placeholder="email@empresa.com, email2@empresa.com"
                                     value={recipients}
                                     onChange={(e) => setRecipients(e.target.value)}
                                 />
                             </div>
-                            <div className="flex gap-3">
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cc: (Cópia para)</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-12 text-sm font-medium"
+                                    placeholder="email-copia@empresa.com"
+                                    value={ccRecipients}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCcRecipients(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link de Acesso (App)</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-11 text-xs font-medium text-blue-600"
+                                    placeholder="https://..."
+                                    value={appAccessLink}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAppAccessLink(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credenciais de Acesso</label>
+                                <Input
+                                    className="bg-slate-50 border-slate-100 rounded-xl h-11 text-xs font-medium"
+                                    placeholder="Login: user | Senha: pas..."
+                                    value={accessCredentials}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAccessCredentials(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
                                 <Button
                                     variant="outline"
                                     className="flex-1 h-12 rounded-xl font-bold uppercase text-[10px] tracking-widest border-slate-200"
@@ -536,14 +625,14 @@ export default function Reports() {
                                     Cancelar
                                 </Button>
                                 <Button
-                                    className="flex-1 h-12 rounded-xl font-black bg-[#FF4200] hover:bg-[#E63B00] text-white uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/20"
+                                    className="flex-1 h-12 rounded-xl font-black bg-[#001540] hover:bg-[#001540]/90 text-white uppercase text-[10px] tracking-widest shadow-lg shadow-blue-950/20"
                                     disabled={sendingEmail}
                                     onClick={() => {
-                                        if (emailModal.reportType === 'strategic') executeSendStrategicEmail(recipients);
-                                        else executeSendExecutiveEmail(recipients);
+                                        if (emailModal.reportType === 'strategic') executeSendStrategicEmail(recipients, ccRecipients);
+                                        else executeSendExecutiveReportEmail(recipients, ccRecipients);
                                     }}
                                 >
-                                    {sendingEmail ? 'ENVIANDO...' : 'ENVIAR AGORA'}
+                                    {sendingEmail ? 'ENVIANDO...' : 'DISPARAR AGORA'}
                                 </Button>
                             </div>
                         </CardContent>
